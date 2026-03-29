@@ -1,3 +1,4 @@
+import StatusBadge from "../components/StatusBadge";
 import { useState } from "react";
 
 const checks = [
@@ -6,89 +7,74 @@ const checks = [
     status: "fail",
     current: "PermitRootLogin yes",
     expected: "PermitRootLogin no",
-    description: "Отключить вход root по SSH",
   },
   {
-    name: "Password Policy",
+    name: "Password Length",
     status: "pass",
     current: "minlen=12",
     expected: "minlen>=12",
-    description: "Минимальная длина пароля",
   },
 ];
 
 export default function Hardening() {
-  const [filter, setFilter] = useState("all");
-
-  const filtered =
-    filter === "all"
-      ? checks
-      : checks.filter((c) => c.status === filter);
+  const [selected, setSelected] = useState(null);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">
-        Проверка конфигураций (харденинг)
-      </h1>
 
-      {/* фильтр */}
-      <div className="flex gap-2">
-        {["all", "fail", "pass"].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded"
-          >
-            {f === "all"
-              ? "Все"
-              : f === "fail"
-              ? "Отклонения"
-              : "Соответствует"}
-          </button>
-        ))}
+      <h1 className="text-2xl font-semibold">Харденинг</h1>
+
+      <div className="grid grid-cols-3 gap-4">
+
+        {/* список */}
+        <div className="card p-4 hover:scale-[1.01] transition cursor-pointer">
+
+          {checks.map((c, i) => (
+            <div
+              key={i}
+              onClick={() => setSelected(c)}
+              className="p-3 border-b border-zinc-800 hover:bg-zinc-800 cursor-pointer"
+            >
+              <p>{c.name}</p>
+              <StatusBadge status={c.status} />
+            </div>
+          ))}
+
+        </div>
+
+        {/* детали */}
+        <div className="card p-5">
+
+          {selected ? (
+            <>
+              <h2 className="mb-4">{selected.name}</h2>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+
+                <div>
+                  <p className="text-zinc-400 mb-2">Текущее</p>
+                  <pre className="bg-black p-3 rounded text-red-400">
+                    {selected.current}
+                  </pre>
+                </div>
+
+                <div>
+                  <p className="text-zinc-400 mb-2">Требуемое</p>
+                  <pre className="bg-black p-3 rounded text-green-400">
+                    {selected.expected}
+                  </pre>
+                </div>
+
+              </div>
+            </>
+          ) : (
+            <p className="text-zinc-400">Выберите проверку</p>
+          )}
+
+        </div>
+
       </div>
 
-      {/* список */}
-      {filtered.map((item, i) => (
-        <div
-          key={i}
-          className="bg-zinc-900 border border-zinc-800 rounded"
-        >
-          <div className="p-4 flex justify-between">
-            <p>{item.name}</p>
-
-            <span
-              className={`text-sm ${
-                item.status === "fail"
-                  ? "text-red-400"
-                  : "text-green-400"
-              }`}
-            >
-              {item.status === "fail"
-                ? "Не соответствует"
-                : "Соответствует"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 text-sm border-t border-zinc-800">
-
-            <div className="p-4">
-              <p className="text-zinc-400 mb-2">Текущее значение</p>
-              <code className="text-red-400">{item.current}</code>
-            </div>
-
-            <div className="p-4">
-              <p className="text-zinc-400 mb-2">Требуемое значение</p>
-              <code className="text-green-400">{item.expected}</code>
-            </div>
-
-          </div>
-
-          <div className="p-4 text-sm text-zinc-400 border-t border-zinc-800">
-            {item.description}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

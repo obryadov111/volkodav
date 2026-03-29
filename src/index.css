@@ -15,3 +15,57 @@
   background: #27272a;
   border-radius: 4px;
 }
+
+body {
+  background: #0b0f14;
+}
+
+/* glow эффекты */
+.card {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: #374151;
+  transform: translateY(-2px);
+}
+
+button {
+  transition: all 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* scroll красиво */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 10px;
+}
+
+/* кнопки */
+button {
+  transition: all 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* hover карточек */
+.card:hover {
+  transform: translateY(-2px);
+}
+
+/* плавность */
+* {
+  transition: background-color 0.2s, border-color 0.2s;
+}
