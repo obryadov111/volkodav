@@ -1,112 +1,208 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '../supabase'
+import { useEffect, useState } from "react";
+import AppCard from "../components/ui/AppCard";
+import StatCard from "../components/ui/StatCard";
+import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
+import { useOrganization } from "../context/OrganizationContext";
+import { getDashboardSummary } from "../api/dashboard";
+
+const EMPTY_SUMMARY = {
+  assetsCount: 0,
+  softwareCount: 0,
+  checksCount: 0,
+  failedChecks: 0,
+  reportsCount: 0,
+  latestReport: null,
+  environmentsCount: 0,
+  criticalAssets: 0,
+};
 
 export default function Dashboard() {
-  const [clients, setClients] = useState([])
-  const [reports, setReports] = useState([])
-  const [stats, setStats] = useState({ total: 0, passed: 0, failed: 0 })
-  const [loading, setLoading] = useState(true)
+  const {
+    selectedOrganization,
+    selectedOrganizationId,
+    loading: orgLoading,
+    hasOrganizations,
+    error: orgError,
+  } = useOrganization();
+
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadData()
-  }, [])
+    async function loadData() {
+      if (!selectedOrganizationId) {
+        setSummary(EMPTY_SUMMARY);
+        setLoading(false);
+        return;
+      }
 
-  async function loadData() {
-    const [
-      { data: clientsData },
-      { data: reportsData },
-      { data: checksData }
-    ] = await Promise.all([
-      supabase.from('client_organizations').select('*'),
-      supabase.from('hardening_reports').select('*, client_organizations(name)').limit(5),
-      supabase.from('hardening_checks').select('status')
-    ])
+      try {
+        setLoading(true);
+        const data = await getDashboardSummary(selectedOrganizationId);
+        setSummary(data);
+      } catch (error) {
+        console.error("Ошибка загрузки dashboard:", error.message);
+        setSummary(EMPTY_SUMMARY);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-    setClients(clientsData || [])
-    setReports(reportsData || [])
-    
-    const checks = checksData || []
-    setStats({
-      total: checks.length,
-      passed: checks.filter(c => c.status === 'pass').length,
-      failed: checks.filter(c => c.status === 'fail').length
-    })
-    
-    setLoading(false)
+    if (!orgLoading) {
+      loadData();
+    }
+  }, [selectedOrganizationId, orgLoading]);
+
+  if (orgLoading) {
+    return <div className="text-zinc-400">Загрузка организаций...</div>;
   }
 
-  if (loading) {
+  if (orgError) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold text-white">Обзор</h1>
+        <ErrorState
+          title="Ошибка подключения к БД"
+          description={orgError}
+        />
       </div>
-    )
+    );
   }
+
+  if (!hasOrganizations) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold text-white">Обзор</h1>
+        <EmptyState
+          title="Нет организаций"
+          description="Таблица client_organizations пустая. Сначала добавь хотя бы одну организацию."
+        />
+      </div>
+    );
+  }
+
+  const hasAnyData =
+    summary.assetsCount > 0 ||
+    summary.softwareCount > 0 ||
+    summary.checksCount > 0 ||
+    summary.reportsCount > 0 ||
+    summary.environmentsCount > 0;
 
   return (
-    <div className="p-8">
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <div className="text-3xl font-bold text-emerald-400 mb-1">{clients.length}</div>
-          <div className="text-slate-400 text-sm">Клиентов</div>
-        </div>
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <div className="text-3xl font-bold text-blue-400 mb-1">{stats.total}</div>
-          <div className="text-slate-400 text-sm">Проверок</div>
-        </div>
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <div className="text-3xl font-bold text-emerald-400 mb-1">{stats.passed}</div>
-          <div className="text-slate-400 text-sm">Пройдено</div>
-        </div>
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <div className="text-3xl font-bold text-red-400 mb-1">{stats.failed}</div>
-          <div className="text-slate-400 text-sm">Отклонений</div>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Обзор</h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          Сводка по организации{" "}
+          <span className="text-white">{selectedOrganization?.name || "—"}</span>
+        </p>
       </div>
 
-      {/* Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700">
-            <h2 className="text-lg font-semibold text-white">Последние отчёты</h2>
-          </div>
-          <div className="divide-y divide-slate-700">
-            {reports.map(r => (
-              <div key={r.id} className="px-6 py-4 hover:bg-slate-700/50 transition-colors">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-white font-medium">{r.client_organizations?.name}</p>
-                    <p className="text-sm text-slate-400">
-                      {new Date(r.generated_at).toLocaleDateString('ru-RU')}
-                    </p>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Активы"
+          value={loading ? "..." : summary.assetsCount}
+          hint="Обнаруженные узлы инфраструктуры"
+          tone="info"
+        />
+        <StatCard
+          label="ПО"
+          value={loading ? "..." : summary.softwareCount}
+          hint="Инвентаризация программного обеспечения"
+          tone="default"
+        />
+        <StatCard
+          label="Проверки"
+          value={loading ? "..." : summary.checksCount}
+          hint="Всего выполненных hardening-checks"
+          tone="default"
+        />
+        <StatCard
+          label="Нарушения"
+          value={loading ? "..." : summary.failedChecks}
+          hint="Проваленные проверки"
+          tone="danger"
+        />
+      </div>
+
+      {!loading && !hasAnyData ? (
+        <EmptyState
+          title="Нет данных по организации"
+          description="Организация выбрана, но связанные environments, assets, software, checks или reports в БД пока отсутствуют."
+        />
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-3">
+          <AppCard
+            title="Состояние инфраструктуры"
+            subtitle="Ключевые показатели выбранной организации"
+            className="xl:col-span-2"
+          >
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+                <div className="text-sm text-zinc-400">Контуры</div>
+                <div className="mt-2 text-3xl font-semibold text-white">
+                  {loading ? "..." : summary.environmentsCount}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+                <div className="text-sm text-zinc-400">Критичные активы</div>
+                <div className="mt-2 text-3xl font-semibold text-rose-300">
+                  {loading ? "..." : summary.criticalAssets}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+                <div className="text-sm text-zinc-400">Сохранённые отчёты</div>
+                <div className="mt-2 text-3xl font-semibold text-white">
+                  {loading ? "..." : summary.reportsCount}
+                </div>
+              </div>
+            </div>
+          </AppCard>
+
+          <AppCard title="Последний отчёт" subtitle="Итог последнего сканирования">
+            {loading ? (
+              <div className="text-zinc-400">Загрузка...</div>
+            ) : summary.latestReport ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+                  <div className="text-sm text-zinc-400">Compliance Score</div>
+                  <div className="mt-2 text-3xl font-semibold text-blue-300">
+                    {Math.round(summary.latestReport.compliance_score || 0)}%
                   </div>
-                  <div className={`text-2xl font-bold ${
-                    (r.compliance_score || 0) >= 80 ? 'text-emerald-400' : 
-                    (r.compliance_score || 0) >= 50 ? 'text-yellow-400' : 'text-red-400'
-                  }`}>
-                    {Math.round(r.compliance_score || 0)}%
+                </div>
+
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+                    <span className="text-sm text-zinc-400">Дата</span>
+                    <span className="text-sm text-white">
+                      {summary.latestReport.generated_at?.slice(0, 10) || "—"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+                    <span className="text-sm text-zinc-400">Всего проверок</span>
+                    <span className="text-sm text-white">
+                      {summary.latestReport.total_checks ?? 0}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+                    <span className="text-sm text-zinc-400">Failed</span>
+                    <span className="text-sm text-rose-300">
+                      {summary.latestReport.failed ?? 0}
+                    </span>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+            ) : (
+              <div className="text-zinc-500">Отчёты ещё не сформированы</div>
+            )}
+          </AppCard>
         </div>
-
-        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700">
-            <h2 className="text-lg font-semibold text-white">Клиенты</h2>
-          </div>
-          <div className="divide-y divide-slate-700">
-            {clients.slice(0, 5).map(c => (
-              <div key={c.id} className="px-6 py-4 hover:bg-slate-700/50 transition-colors">
-                <p className="text-white font-medium">{c.name}</p>
-                <p className="text-sm text-slate-400">{c.industry} • {c.country}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
-  )
+  );
 }

@@ -1,65 +1,46 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import { AuthProvider, useAuth } from './contexts/AuthContext'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import Sidebar from './components/Sidebar'
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Layout from "./components/Layout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Login from "./pages/Login";
+import { OrganizationProvider } from "./context/OrganizationContext";
 
-// Глобальный лоадер
-function GlobalLoader() {
+import Dashboard from "./pages/Dashboard";
+import Assets from "./pages/Assets";
+import AssetDetails from "./pages/AssetDetails";
+import Hardening from "./pages/Hardening";
+import Policies from "./pages/Policies";
+import Report from "./pages/Report";
+import Project from "./pages/Project";
+import SoftwareInventory from "./pages/SoftwareInventory";
+import Scans from "./pages/Scans";
+import ScanCompare from "./pages/ScanCompare";
+
+export default function App() {
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
-    </div>
-  )
-}
-
-// Защищённый layout
-function ProtectedLayout() {
-  const { user, loading } = useAuth()
-
-  if (loading) return <GlobalLoader />
-  if (!user) return <Navigate to="/login" replace />
-
-  return (
-    <div className="min-h-screen bg-slate-900 flex">
-      <Sidebar user={user} />
-      <main className="flex-1 ml-64">
-        <Outlet />
-      </main>
-    </div>
-  )
-}
-
-// Публичный layout (только для неавторизованных)
-function PublicLayout() {
-  const { user, loading } = useAuth()
-
-  if (loading) return <GlobalLoader />
-  if (user) return <Navigate to="/dashboard" replace />
-
-  return <Outlet />
-}
-
-// Обёртка с провайдером
-function AppWithProvider() {
-  return (
-    <AuthProvider>
-      <Router>
+    <BrowserRouter>
+      <OrganizationProvider>
         <Routes>
-          <Route element={<PublicLayout />}>
-            <Route path="/login" element={<Login />} />
-          </Route>
+          <Route path="/login" element={<Login />} />
 
-          <Route element={<ProtectedLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="assets" element={<Assets />} />
+              <Route path="assets/:id" element={<AssetDetails />} />
+              <Route path="hardening" element={<Hardening />} />
+              <Route path="policies" element={<Policies />} />
+              <Route path="report" element={<Report />} />
+              <Route path="project" element={<Project />} />
+              <Route path="software" element={<SoftwareInventory />} />
+              <Route path="scans" element={<Scans />} />
+              <Route path="scan-compare" element={<ScanCompare />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </Router>
-    </AuthProvider>
-  )
+      </OrganizationProvider>
+    </BrowserRouter>
+  );
 }
-
-export default AppWithProvider

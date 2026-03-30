@@ -1,21 +1,35 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { authApi } from '../api/auth'
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute() {
   const [isAuth, setIsAuth] = useState(false)
   const [loading, setLoading] = useState(true)
   const location = useLocation()
 
   useEffect(() => {
-    checkAuth()
-  }, [])
+    let mounted = true
 
-  async function checkAuth() {
-    const session = await authApi.getSession()
-    setIsAuth(!!session)
-    setLoading(false)
-  }
+    async function checkAuth() {
+      const session = await authApi.getSession()
+      if (!mounted) return
+      setIsAuth(!!session)
+      setLoading(false)
+    }
+
+    checkAuth()
+
+    const { data: subscription } = authApi.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      setIsAuth(!!session)
+      setLoading(false)
+    })
+
+    return () => {
+      mounted = false
+      subscription?.subscription?.unsubscribe?.()
+    }
+  }, [])
 
   if (loading) {
     return (
@@ -29,5 +43,5 @@ export default function ProtectedRoute({ children }) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  return children
+  return <Outlet />
 }
