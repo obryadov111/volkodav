@@ -2,44 +2,19 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { authApi } from '../api/auth'
 
-export default function ProtectedRoute({ children, requiredPermission = null }) {
-  const [isValid, setIsValid] = useState(false)
+export default function ProtectedRoute({ children }) {
+  const [isAuth, setIsAuth] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState(null)
   const location = useLocation()
 
   useEffect(() => {
-    validateAuth()
+    checkAuth()
   }, [])
 
-  async function validateAuth() {
-    try {
-      const token = await authApi.validateSession()
-      
-      if (!token) {
-        setIsValid(false)
-        setLoading(false)
-        return
-      }
-
-      // Декодируем токен для проверки прав
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      setUser(payload)
-
-      // Проверка конкретного разрешения
-      if (requiredPermission && !payload.permissions?.includes(requiredPermission)) {
-        setIsValid(false)
-        setLoading(false)
-        return
-      }
-
-      setIsValid(true)
-    } catch (err) {
-      console.error('Ошибка валидации:', err)
-      setIsValid(false)
-    } finally {
-      setLoading(false)
-    }
+  async function checkAuth() {
+    const session = await authApi.getSession()
+    setIsAuth(!!session)
+    setLoading(false)
   }
 
   if (loading) {
@@ -50,11 +25,9 @@ export default function ProtectedRoute({ children, requiredPermission = null }) 
     )
   }
 
-  if (!isValid) {
-    // Сохраняем путь для редиректа после логина
+  if (!isAuth) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  // Передаём user в children через context или cloneElement
   return children
 }

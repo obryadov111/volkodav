@@ -1,47 +1,26 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { authApi } from '../api/auth'
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [attempts, setAttempts] = useState(0)
 
   async function handleSubmit(e) {
     e.preventDefault()
-    
-    // Защита от брутфорса
-    if (attempts >= 5) {
-      setError('Слишком много попыток. Попробуйте позже.')
-      return
-    }
-
     setLoading(true)
     setError(null)
 
     try {
-      // Валидация email
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(email)) {
-        throw new Error('Введите корректный email')
-      }
-
-      // Валидация пароля
-      if (password.length < 8) {
-        throw new Error('Пароль должен быть не менее 8 символов')
-      }
-
       await authApi.login(email, password)
-      navigate('/dashboard')
+      const from = location.state?.from?.pathname || '/dashboard'
+      navigate(from, { replace: true })
     } catch (err) {
-      setAttempts(prev => prev + 1)
       setError(err.message)
-      
-      // Очистка пароля при ошибке
-      setPassword('')
     } finally {
       setLoading(false)
     }
@@ -49,13 +28,11 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      {/* Фон */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20" />
       </div>
 
       <div className="relative w-full max-w-md">
-        {/* Логотип */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 mb-4">
             <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,7 +43,6 @@ export default function Login() {
           <p className="text-slate-400">Система автоматизации харденинга</p>
         </div>
 
-        {/* Форма */}
         <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700 p-8 shadow-2xl">
           <h2 className="text-xl font-semibold text-white mb-6 text-center">
             Вход для аудиторов
@@ -89,9 +65,8 @@ export default function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
                 required
-                autoComplete="email"
                 className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all disabled:opacity-50"
-                placeholder="auditor@company.com"
+                placeholder="admin@technoaudit.ru"
               />
             </div>
 
@@ -105,8 +80,6 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
                 required
-                minLength={8}
-                autoComplete="current-password"
                 className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all disabled:opacity-50"
                 placeholder="••••••••"
               />
@@ -114,7 +87,7 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={loading || attempts >= 5}
+              disabled={loading}
               className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
             >
               {loading ? (
@@ -127,26 +100,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          <button 
-  type="button"
-  onClick={async () => {
-    try {
-      await authApi.updatePassword('admin@technoaudit.ru', 'password123')
-      alert('Пароль обновлён! Теперь войдите.')
-    } catch (e) {
-      alert('Ошибка: ' + e.message)
-    }
-  }}
-  className="mt-4 w-full py-2 px-4 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600"
->
-  ⚠️ Обновить пароль (тестовая кнопка)
-</button>
-          {attempts > 0 && (
-            <p className="mt-4 text-center text-xs text-slate-500">
-              Попытка {attempts} из 5
-            </p>
-          )}
         </div>
       </div>
     </div>
