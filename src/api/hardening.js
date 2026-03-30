@@ -6,6 +6,9 @@ export async function getHardeningByOrganization(organizationId) {
     .select("id")
     .eq("organization_id", organizationId);
 
+  console.log("getHardeningByOrganization -> environments:", environments);
+  console.log("getHardeningByOrganization -> envError:", envError);
+
   if (envError) throw envError;
 
   const environmentIds = (environments || []).map((item) => item.id);
@@ -15,6 +18,9 @@ export async function getHardeningByOrganization(organizationId) {
     .from("assets")
     .select("id, hostname, environment_id")
     .in("environment_id", environmentIds);
+
+  console.log("getHardeningByOrganization -> assets:", assets);
+  console.log("getHardeningByOrganization -> assetsError:", assetsError);
 
   if (assetsError) throw assetsError;
 
@@ -36,11 +42,15 @@ export async function getHardeningByOrganization(organizationId) {
     .in("asset_id", assetIds)
     .order("checked_at", { ascending: false });
 
+  console.log("getHardeningByOrganization -> checks:", checks);
+  console.log("getHardeningByOrganization -> checksError:", checksError);
+
   if (checksError) throw checksError;
 
   const ruleIds = [...new Set((checks || []).map((item) => item.rule_id).filter(Boolean))];
 
   let ruleMap = new Map();
+
   if (ruleIds.length) {
     const { data: rules, error: rulesError } = await supabase
       .from("hardening_rules")
@@ -55,6 +65,9 @@ export async function getHardeningByOrganization(organizationId) {
         remediation
       `)
       .in("id", ruleIds);
+
+    console.log("getHardeningByOrganization -> rules:", rules);
+    console.log("getHardeningByOrganization -> rulesError:", rulesError);
 
     if (rulesError) throw rulesError;
     ruleMap = new Map((rules || []).map((item) => [item.id, item]));
@@ -87,6 +100,7 @@ export async function getHardeningByAsset(assetId) {
   const ruleIds = [...new Set((checks || []).map((item) => item.rule_id).filter(Boolean))];
 
   let ruleMap = new Map();
+
   if (ruleIds.length) {
     const { data: rules, error: rulesError } = await supabase
       .from("hardening_rules")

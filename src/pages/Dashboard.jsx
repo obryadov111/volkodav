@@ -40,6 +40,7 @@ export default function Dashboard() {
       try {
         setLoading(true);
         const data = await getDashboardSummary(selectedOrganizationId);
+        console.log("Dashboard summary:", data);
         setSummary(data);
       } catch (error) {
         console.error("Ошибка загрузки dashboard:", error.message);
@@ -62,10 +63,7 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-white">Обзор</h1>
-        <ErrorState
-          title="Ошибка подключения к БД"
-          description={orgError}
-        />
+        <ErrorState title="Ошибка подключения к БД" description={orgError} />
       </div>
     );
   }
@@ -129,7 +127,7 @@ export default function Dashboard() {
       {!loading && !hasAnyData ? (
         <EmptyState
           title="Нет данных по организации"
-          description="Организация выбрана, но связанные environments, assets, software, checks или reports в БД пока отсутствуют."
+          description="Организация выбрана, но связанные данные в БД пока отсутствуют."
         />
       ) : (
         <div className="grid gap-6 xl:grid-cols-3">
@@ -198,7 +196,9 @@ export default function Dashboard() {
                 </div>
               </div>
             ) : (
-              <div className="text-zinc-500">Отчёты ещё не сформированы</div>
+              <div className="text-zinc-500">
+                Отчётов пока нет, но остальные данные загружены.
+              </div>
             )}
           </AppCard>
         </div>

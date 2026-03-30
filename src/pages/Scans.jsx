@@ -6,6 +6,10 @@ import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
 import { useOrganization } from "../context/OrganizationContext";
 import { getSnapshotsByOrganization } from "../api/snapshots";
+import {
+  generateAndStoreSnapshotExport,
+  getSnapshotExportDownloadUrl,
+} from "../api/exports";
 
 function getStatusBadgeClass(status) {
   switch (status) {
@@ -48,6 +52,7 @@ export default function Scans() {
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [busyKey, setBusyKey] = useState("");
 
   useEffect(() => {
     async function loadData() {
@@ -82,6 +87,50 @@ export default function Scans() {
 
     return { total, completed, failed, latest };
   }, [rows]);
+
+  async function openStoredExport(path) {
+    const url = await getSnapshotExportDownloadUrl(path, 120);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleExport(snapshot, format) {
+    const key = `${snapshot.id}-${format}`;
+    setBusyKey(key);
+
+    try {
+      const existingPath =
+        format === "pdf"
+          ? snapshot.exported_pdf_path
+          : snapshot.exported_excel_path;
+
+      let path = existingPath;
+
+      if (!path) {
+        path = await generateAndStoreSnapshotExport(snapshot.id, format);
+
+        setRows((prev) =>
+          prev.map((row) =>
+            row.id === snapshot.id
+              ? {
+                  ...row,
+                  exported_pdf_path:
+                    format === "pdf" ? path : row.exported_pdf_path,
+                  exported_excel_path:
+                    format === "excel" ? path : row.exported_excel_path,
+                }
+              : row
+          )
+        );
+      }
+
+      await openStoredExport(path);
+    } catch (error) {
+      console.error(`Ошибка экспорта ${format}:`, error.message);
+      alert(`Не удалось сформировать ${format.toUpperCase()}.\n${error.message}`);
+    } finally {
+      setBusyKey("");
+    }
+  }
 
   if (orgLoading) {
     return <div className="text-zinc-400">Загрузка организаций...</div>;
@@ -165,6 +214,8 @@ export default function Scans() {
               <tbody>
                 {rows.map((item, index) => {
                   const previous = rows[index + 1] || null;
+                  const pdfBusy = busyKey === `${item.id}-pdf`;
+                  const excelBusy = busyKey === `${item.id}-excel`;
 
                   return (
                     <tr
@@ -203,33 +254,25 @@ export default function Scans() {
                       </td>
 
                       <td className="px-4 py-3">
-                        {item.exported_pdf_path ? (
-                          <a
-                            href={item.exported_pdf_path}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-800"
-                          >
-                            PDF
-                          </a>
-                        ) : (
-                          <span className="text-zinc-500">—</span>
-                        )}
+                        <button
+                          type="button"
+                          disabled={pdfBusy}
+                          onClick={() => handleExport(item, "pdf")}
+                          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-800 disabled:opacity-50"
+                        >
+                          {pdfBusy ? "..." : item.exported_pdf_path ? "Открыть PDF" : "Создать PDF"}
+                        </button>
                       </td>
 
                       <td className="px-4 py-3">
-                        {item.exported_excel_path ? (
-                          <a
-                            href={item.exported_excel_path}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-800"
-                          >
-                            Excel
-                          </a>
-                        ) : (
-                          <span className="text-zinc-500">—</span>
-                        )}
+                        <button
+                          type="button"
+                          disabled={excelBusy}
+                          onClick={() => handleExport(item, "excel")}
+                          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-800 disabled:opacity-50"
+                        >
+                          {excelBusy ? "..." : item.exported_excel_path ? "Открыть Excel" : "Создать Excel"}
+                        </button>
                       </td>
 
                       <td className="px-4 py-3">

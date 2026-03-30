@@ -6,6 +6,9 @@ export async function getSoftwareByOrganization(organizationId) {
     .select("id")
     .eq("organization_id", organizationId);
 
+  console.log("getSoftwareByOrganization -> environments:", environments);
+  console.log("getSoftwareByOrganization -> envError:", envError);
+
   if (envError) throw envError;
 
   const environmentIds = (environments || []).map((item) => item.id);
@@ -15,6 +18,9 @@ export async function getSoftwareByOrganization(organizationId) {
     .from("assets")
     .select("id, hostname, os, environment_id")
     .in("environment_id", environmentIds);
+
+  console.log("getSoftwareByOrganization -> assets:", assets);
+  console.log("getSoftwareByOrganization -> assetsError:", assetsError);
 
   if (assetsError) throw assetsError;
 
@@ -36,6 +42,9 @@ export async function getSoftwareByOrganization(organizationId) {
     `)
     .in("asset_id", assetIds)
     .order("name", { ascending: true });
+
+  console.log("getSoftwareByOrganization -> software:", data);
+  console.log("getSoftwareByOrganization -> error:", error);
 
   if (error) throw error;
 

@@ -10,13 +10,17 @@ export function OrganizationProvider({ children }) {
     localStorage.getItem(STORAGE_KEY) || null
   );
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function loadOrganizations() {
       try {
         setLoading(true);
+        setError("");
 
         const rows = await getOrganizations();
+        console.log("organizations from db:", rows);
+
         setOrganizations(rows);
 
         if (!rows.length) {
@@ -35,10 +39,11 @@ export function OrganizationProvider({ children }) {
           setSelectedOrganizationId(firstId);
           localStorage.setItem(STORAGE_KEY, firstId);
         }
-      } catch (error) {
-        console.error("Ошибка загрузки организаций:", error.message);
+      } catch (err) {
+        console.error("Ошибка загрузки организаций:", err);
         setOrganizations([]);
         setSelectedOrganizationId(null);
+        setError(err?.message || "Не удалось загрузить организации");
       } finally {
         setLoading(false);
       }
@@ -48,6 +53,8 @@ export function OrganizationProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    console.log("selectedOrganizationId:", selectedOrganizationId);
+
     if (!selectedOrganizationId) {
       localStorage.removeItem(STORAGE_KEY);
       return;
@@ -70,9 +77,16 @@ export function OrganizationProvider({ children }) {
       setSelectedOrganizationId,
       selectedOrganization,
       loading,
+      error,
       hasOrganizations: organizations.length > 0,
     }),
-    [organizations, selectedOrganizationId, selectedOrganization, loading]
+    [
+      organizations,
+      selectedOrganizationId,
+      selectedOrganization,
+      loading,
+      error,
+    ]
   );
 
   return (

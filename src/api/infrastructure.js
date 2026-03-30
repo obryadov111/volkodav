@@ -11,6 +11,9 @@ export async function getEnvironmentsByOrganization(organizationId) {
     .eq("organization_id", organizationId)
     .order("name", { ascending: true });
 
+  console.log("getEnvironmentsByOrganization -> environments:", environments);
+  console.log("getEnvironmentsByOrganization -> envError:", envError);
+
   if (envError) throw envError;
 
   const environmentIds = (environments || []).map((item) => item.id);
@@ -20,6 +23,9 @@ export async function getEnvironmentsByOrganization(organizationId) {
     .from("assets")
     .select("id, environment_id, criticality")
     .in("environment_id", environmentIds);
+
+  console.log("getEnvironmentsByOrganization -> assets:", assets);
+  console.log("getEnvironmentsByOrganization -> assetsError:", assetsError);
 
   if (assetsError) throw assetsError;
 

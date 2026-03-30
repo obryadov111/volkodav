@@ -15,6 +15,9 @@ export async function getReportsByOrganization(organizationId) {
     .eq("organization_id", organizationId)
     .order("generated_at", { ascending: false });
 
+  console.log("getReportsByOrganization -> reports:", data);
+  console.log("getReportsByOrganization -> error:", error);
+
   if (error) throw error;
   return data || [];
 }

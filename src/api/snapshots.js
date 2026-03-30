@@ -24,6 +24,9 @@ export async function getSnapshotsByOrganization(organizationId) {
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
 
+  console.log("getSnapshotsByOrganization -> data:", data);
+  console.log("getSnapshotsByOrganization -> error:", error);
+
   if (error) throw error;
   return data || [];
 }
@@ -120,7 +123,6 @@ export async function compareSnapshots(beforeSnapshotId, afterSnapshotId) {
   const afterMap = new Map(afterChecks.map((item) => [keyOf(item), item]));
 
   const allKeys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
-
   const diffs = [];
 
   for (const key of allKeys) {
@@ -135,19 +137,12 @@ export async function compareSnapshots(beforeSnapshotId, afterSnapshotId) {
 
     let changeType = "unchanged";
 
-    if (!before && after) {
-      changeType = "new";
-    } else if (before && !after) {
-      changeType = "removed";
-    } else if (beforeStatus === "fail" && afterStatus === "pass") {
-      changeType = "fixed";
-    } else if (beforeStatus === "pass" && afterStatus === "fail") {
-      changeType = "regressed";
-    } else if (beforeStatus === "fail" && afterStatus === "fail") {
-      changeType = "still_failed";
-    } else if (beforeStatus !== afterStatus) {
-      changeType = "changed";
-    }
+    if (!before && after) changeType = "new";
+    else if (before && !after) changeType = "removed";
+    else if (beforeStatus === "fail" && afterStatus === "pass") changeType = "fixed";
+    else if (beforeStatus === "pass" && afterStatus === "fail") changeType = "regressed";
+    else if (beforeStatus === "fail" && afterStatus === "fail") changeType = "still_failed";
+    else if (beforeStatus !== afterStatus) changeType = "changed";
 
     diffs.push({
       key,

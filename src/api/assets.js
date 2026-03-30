@@ -6,6 +6,9 @@ export async function getAssetsByOrganization(organizationId) {
     .select("id, name, organization_id")
     .eq("organization_id", organizationId);
 
+  console.log("getAssetsByOrganization -> environments:", environments);
+  console.log("getAssetsByOrganization -> envError:", envError);
+
   if (envError) throw envError;
 
   const environmentMap = new Map((environments || []).map((env) => [env.id, env]));
@@ -27,6 +30,9 @@ export async function getAssetsByOrganization(organizationId) {
     `)
     .in("environment_id", environmentIds)
     .order("created_at", { ascending: false });
+
+  console.log("getAssetsByOrganization -> assets:", data);
+  console.log("getAssetsByOrganization -> error:", error);
 
   if (error) throw error;
 

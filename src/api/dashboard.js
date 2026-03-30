@@ -6,6 +6,9 @@ export async function getDashboardSummary(organizationId) {
     .select("id")
     .eq("organization_id", organizationId);
 
+  console.log("getDashboardSummary -> environments:", environments);
+  console.log("getDashboardSummary -> envError:", envError);
+
   if (envError) throw envError;
 
   const environmentIds = (environments || []).map((item) => item.id);
@@ -48,6 +51,15 @@ export async function getDashboardSummary(organizationId) {
       .eq("organization_id", organizationId)
       .order("generated_at", { ascending: false }),
   ]);
+
+  console.log("getDashboardSummary -> assets:", assetsResult.data);
+  console.log("getDashboardSummary -> assetsError:", assetsResult.error);
+  console.log("getDashboardSummary -> software:", softwareResult.data);
+  console.log("getDashboardSummary -> softwareError:", softwareResult.error);
+  console.log("getDashboardSummary -> checks:", checksResult.data);
+  console.log("getDashboardSummary -> checksError:", checksResult.error);
+  console.log("getDashboardSummary -> reports:", reportsResult.data);
+  console.log("getDashboardSummary -> reportsError:", reportsResult.error);
 
   if (assetsResult.error) throw assetsResult.error;
   if (softwareResult.error) throw softwareResult.error;

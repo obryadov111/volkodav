@@ -5,11 +5,14 @@ import { useOrganization } from "../context/OrganizationContext";
 
 export default function Topbar() {
   const navigate = useNavigate();
+
   const {
     organizations,
     selectedOrganizationId,
     setSelectedOrganizationId,
     selectedOrganization,
+    loading: orgLoading,
+    hasOrganizations,
   } = useOrganization();
 
   const handleLogout = async () => {
@@ -25,7 +28,7 @@ export default function Topbar() {
     <header className="sticky top-0 z-10 border-b border-zinc-800 bg-[#0b0f14]/95 backdrop-blur">
       <div className="flex flex-col gap-4 px-6 py-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <div className="text-lg font-semibold text-white">Yakilka</div>
+          <div className="text-lg font-semibold text-white">Volkodav</div>
           <div className="text-sm text-zinc-400">
             {selectedOrganization
               ? `Текущая организация: ${selectedOrganization.name}`
@@ -36,17 +39,29 @@ export default function Topbar() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2">
             <Building2 size={16} className="text-zinc-500" />
-              <select
-                value={selectedOrganizationId || ""}
-                onChange={(e) => setSelectedOrganizationId(e.target.value)}
-                className="bg-transparent text-sm text-white outline-none"
-              >
-                {organizations.map((org) => (
-                  <option key={org.id} value={org.id} className="bg-zinc-900 text-white">
+
+            <select
+              value={selectedOrganizationId || ""}
+              onChange={(e) => setSelectedOrganizationId(e.target.value)}
+              disabled={orgLoading || !hasOrganizations}
+              className="min-w-[220px] bg-transparent text-sm text-white outline-none disabled:text-zinc-500"
+            >
+              {orgLoading ? (
+                <option value="">Загрузка организаций...</option>
+              ) : !hasOrganizations ? (
+                <option value="">Нет организаций</option>
+              ) : (
+                organizations.map((org) => (
+                  <option
+                    key={org.id}
+                    value={org.id}
+                    className="bg-zinc-900 text-white"
+                  >
                     {org.name}
                   </option>
-              ))}
-              </select>
+                ))
+              )}
+            </select>
           </div>
 
           <div className="hidden items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 md:flex">
