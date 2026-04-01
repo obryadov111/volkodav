@@ -3,12 +3,24 @@ import { supabase } from '../supabase'
 export const authApi = {
   async login(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase().trim(),
+      email: email.trim().toLowerCase(),
       password,
-    })
+    });
 
-    if (error) throw new Error('Неверный email или пароль')
-    return data
+    if (error) throw error;
+    return data;
+  },
+
+  async register({ email, password, displayName }) {
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: {
+          display_name: displayName?.trim() || null,
+        },
+      },
+    });
   },
 
   async logout() {

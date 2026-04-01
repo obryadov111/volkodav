@@ -3,7 +3,7 @@ import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import { OrganizationProvider } from "./context/OrganizationContext";
-
+import OrganizationUsers from "./pages/OrganizationUsers";
 import Dashboard from "./pages/Dashboard";
 import Assets from "./pages/Assets";
 import AssetDetails from "./pages/AssetDetails";
@@ -35,9 +35,10 @@ export default function App() {
               <Route path="software" element={<SoftwareInventory />} />
               <Route path="scans" element={<Scans />} />
               <Route path="scan-compare" element={<ScanCompare />} />
+              <Route path="organization-users" element={<OrganizationUsers />} />
             </Route>
           </Route>
-
+          
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </OrganizationProvider>

@@ -1,10 +1,24 @@
-import { Bell, Building2, LogOut, Search, Shield } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Bell,
+  Building2,
+  ChevronDown,
+  LogOut,
+  Search,
+  Shield,
+  UserCog,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authApi } from "../api/auth";
+import {
+  getCurrentUserProfile,
+  getCurrentUserRoleInOrganization,
+} from "../api/users";
 import { useOrganization } from "../context/OrganizationContext";
 
 export default function Topbar() {
   const navigate = useNavigate();
+  const menuRef = useRef(null);
 
   const {
     organizations,
@@ -15,6 +29,53 @@ export default function Topbar() {
     hasOrganizations,
   } = useOrganization();
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [currentRole, setCurrentRole] = useState(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const data = await getCurrentUserProfile();
+        setProfile(data);
+      } catch (error) {
+        console.error("Ошибка загрузки профиля:", error.message);
+      }
+    }
+
+    loadProfile();
+  }, []);
+
+  useEffect(() => {
+    async function loadRole() {
+      try {
+        if (!selectedOrganizationId) {
+          setCurrentRole(null);
+          return;
+        }
+
+        const role = await getCurrentUserRoleInOrganization(selectedOrganizationId);
+        setCurrentRole(role);
+      } catch (error) {
+        console.error("Ошибка загрузки роли:", error.message);
+        setCurrentRole(null);
+      }
+    }
+
+    loadRole();
+  }, [selectedOrganizationId]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const handleLogout = async () => {
     try {
       await authApi.logout();
@@ -23,6 +84,8 @@ export default function Topbar() {
       console.error("Ошибка выхода:", error.message);
     }
   };
+
+  const roleLabel = currentRole || "viewer";
 
   return (
     <header className="sticky top-0 z-10 border-b border-zinc-800 bg-[#0b0f14]/95 backdrop-blur">
@@ -80,24 +143,69 @@ export default function Topbar() {
             <Bell size={18} />
           </button>
 
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500/15 text-blue-300">
-              <Shield size={16} />
-            </div>
-            <div className="leading-tight">
-              <div className="text-sm font-medium text-white">admin</div>
-              <div className="text-xs text-zinc-400">Security Analyst</div>
-            </div>
-          </div>
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-left hover:bg-zinc-800/80"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500/15 text-blue-300">
+                <Shield size={16} />
+              </div>
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white"
-          >
-            <LogOut size={16} />
-            <span>Выйти</span>
-          </button>
+              <div className="leading-tight">
+                <div className="text-sm font-medium text-white">
+                  {profile?.email || "Пользователь"}
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {roleLabel}
+                </div>
+              </div>
+
+              <ChevronDown size={16} className="text-zinc-500" />
+            </button>
+
+            {menuOpen ? (
+              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-zinc-800 bg-zinc-900 p-2 shadow-2xl">
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3">
+                  <div className="text-sm font-medium text-white">
+                    {profile?.email || "Без email"}
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-400">
+                    Роль: {roleLabel}
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-400">
+                    Организация: {selectedOrganization?.name || "—"}
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-col gap-1">
+                  {currentRole === "admin" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        navigate("/organization-users");
+                      }}
+                      className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                    >
+                      <UserCog size={16} />
+                      <span>Управление доступом</span>
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-rose-300 hover:bg-zinc-800"
+                  >
+                    <LogOut size={16} />
+                    <span>Выйти</span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </header>
