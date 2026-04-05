@@ -1,0 +1,78 @@
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from jose import jwt
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user, get_db
+from app.core.config import settings
+from app.core.security import create_access_token, decrypt_totp_secret, verify_password
+from app.models.user import User
+from app.models.user_2fa import User2FA
+from app.schemas.auth import LoginRequest, LoginResponse, MeResponse, Verify2FARequest
+from app.services.twofa_service import verify_totp_code
+
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/login", response_model=LoginResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный логин или пароль")
+
+    if not user.is_active or user.account_status != "active":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Пользователь не активен")
+
+    twofa = db.query(User2FA).filter(User2FA.user_id == user.id).first()
+    if twofa and twofa.is_enabled:
+        temp_token = jwt.encode(
+            {"sub": str(user.id), "type": "pre_2fa"},
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+        return LoginResponse(two_factor_required=True, temp_token=temp_token)
+
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    return LoginResponse(access_token=create_access_token(str(user.id)))
+
+
+@router.post("/verify-2fa", response_model=LoginResponse)
+def verify_2fa(payload: Verify2FARequest, db: Session = Depends(get_db)):
+    try:
+        token_payload = jwt.decode(payload.temp_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный временный токен")
+
+    if token_payload.get("type") != "pre_2fa":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный тип токена")
+
+    user_id = token_payload.get("sub")
+    user = db.query(User).filter(User.id == user_id).first()
+    twofa = db.query(User2FA).filter(User2FA.user_id == user_id).first()
+
+    if not user or not twofa or not twofa.is_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA не настроен")
+
+    secret = decrypt_totp_secret(twofa.secret_encrypted)
+    if not verify_totp_code(secret, payload.code.strip()):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный код 2FA")
+
+    user.last_login_at = datetime.now(timezone.utc)
+    twofa.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return LoginResponse(access_token=create_access_token(str(user.id)))
+
+
+@router.get("/me", response_model=MeResponse)
+def me(current_user: User = Depends(get_current_user)):
+    return MeResponse(
+        id=str(current_user.id),
+        email=current_user.email,
+        display_name=current_user.display_name,
+        is_superadmin=current_user.is_superadmin,
+        account_status=current_user.account_status,
+    )

@@ -1,63 +1,122 @@
-import { useState } from 'react'
-import { supabase } from '../supabase'
+import { useState } from "react";
+import { adminCreateUser } from "../api/users";
+
+const ROLE_OPTIONS = [
+  { value: "admin", label: "Администратор" },
+  { value: "auditor", label: "Аудитор" },
+  { value: "operator", label: "Оператор" },
+  { value: "viewer", label: "Наблюдатель" },
+];
 
 export default function AdminCreateUser() {
-  const [email, setEmail] = useState('')
-  const [password, setEmail] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [role, setRole] = useState("viewer");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function createUser(e) {
-    e.preventDefault()
-    
-    // Создаём через Admin API (нужен service_role ключ!)
-    const { data, error } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Авто-подтверждение
-      user_metadata: { full_name: fullName }
-    })
+    e.preventDefault();
+    setError("");
+    setMessage("");
 
-    if (error) {
-      setMessage(`Ошибка: ${error.message}`)
-    } else {
-      setMessage(`Пользователь ${email} создан!`)
-      setEmail('')
-      setPassword('')
-      setFullName('')
+    try {
+      setLoading(true);
+
+      await adminCreateUser({
+        email: email.trim().toLowerCase(),
+        password,
+        full_name: fullName.trim() || null,
+        display_name: fullName.trim() || null,
+        role,
+      });
+
+      setMessage(`Пользователь ${email} создан`);
+      setEmail("");
+      setPassword("");
+      setFullName("");
+      setRole("viewer");
+    } catch (err) {
+      setError(err.message || "Ошибка создания пользователя");
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl text-white mb-4">Создание пользователя (Админ)</h1>
-      <form onSubmit={createUser} className="space-y-4 max-w-md">
-        <input
-          type="text"
-          placeholder="Полное имя"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          className="w-full px-4 py-2 bg-slate-800 text-white rounded"
-        />
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full px-4 py-2 bg-slate-800 text-white rounded"
-        />
-        <input
-          type="password"
-          placeholder="Пароль"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-4 py-2 bg-slate-800 text-white rounded"
-        />
-        <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded">
-          Создать
+    <div className="mx-auto max-w-xl p-6 text-white">
+      <h1 className="mb-6 text-2xl font-semibold">Создание пользователя</h1>
+
+      <form onSubmit={createUser} className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <div>
+          <label className="mb-1 block text-sm text-zinc-400">ФИО</label>
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2 outline-none focus:border-blue-500"
+            placeholder="Иван Петров"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-zinc-400">Email</label>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2 outline-none focus:border-blue-500"
+            placeholder="user@example.com"
+            type="email"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-zinc-400">Пароль</label>
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2 outline-none focus:border-blue-500"
+            placeholder="Введите пароль"
+            type="password"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-zinc-400">Роль</label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2 outline-none focus:border-blue-500"
+          >
+            {ROLE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium transition hover:bg-blue-500 disabled:opacity-60"
+        >
+          {loading ? "Создаём..." : "Создать"}
         </button>
+
+        {message ? (
+          <div className="rounded-lg border border-emerald-900 bg-emerald-950/40 px-4 py-2 text-sm text-emerald-300">
+            {message}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-2 text-sm text-red-300">
+            {error}
+          </div>
+        ) : null}
       </form>
-      {message && <p className="mt-4 text-white">{message}</p>}
     </div>
-  )
+  );
 }

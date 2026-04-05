@@ -1,41 +1,77 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import { authApi } from '../api/auth'
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { authApi } from "../api/auth";
 
-const AuthContext = createContext(null)
+const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(undefined) // undefined = загрузка, null = не авторизован
-  const [loading, setLoading] = useState(true)
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    authApi.getSession().then(({ session }) => {
-      setUser(session?.user || null)
-      setLoading(false)
-    })
+  async function refreshProfile() {
+    try {
+      const currentSession = await authApi.getSession();
+      setSession(currentSession);
 
-    // Подписка на изменения
-    const { data: { subscription } } = authApi.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null)
-    })
+      if (!currentSession) {
+        setProfile(null);
+        return null;
+      }
 
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const value = {
-    user,
-    loading,
-    isAuthenticated: !!user
+      const me = await authApi.getMyProfile();
+      setProfile(me);
+      return me;
+    } finally {
+      setLoading(false);
+    }
   }
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  )
+  useEffect(() => {
+    refreshProfile().catch((error) => {
+      console.error("AuthProvider init error", error);
+      setLoading(false);
+    });
+
+    const subscription = authApi.onAuthStateChange(async (_event, currentSession) => {
+      setSession(currentSession);
+      if (!currentSession) {
+        setProfile(null);
+        return;
+      }
+
+      try {
+        const me = await authApi.getMyProfile();
+        setProfile(me);
+      } catch (error) {
+        console.error("AuthProvider profile error", error);
+        setProfile(null);
+      }
+    });
+
+    return () => {
+      subscription?.data?.subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      session,
+      profile,
+      loading,
+      isAuthenticated: Boolean(session),
+      refreshProfile,
+      logout: authApi.logout,
+    }),
+    [session, profile, loading]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider')
-  return context
+  const value = useContext(AuthContext);
+  if (!value) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+  return value;
 }

@@ -1,10 +1,8 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
-import { useSessionTimeout } from "../hooks/useSessionTimeout"
 
 export default function Layout() {
-  useSessionTimeout()
   return (
     <div className="min-h-screen bg-[#0b0f14] text-white">
       <div className="flex min-h-screen">

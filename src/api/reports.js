@@ -1,23 +1,5 @@
-import { supabase } from "../supabase";
+import { apiFetch } from "./client";
 
 export async function getReportsByOrganization(organizationId) {
-  const { data, error } = await supabase
-    .from("hardening_reports")
-    .select(`
-      id,
-      organization_id,
-      total_checks,
-      passed,
-      failed,
-      compliance_score,
-      generated_at
-    `)
-    .eq("organization_id", organizationId)
-    .order("generated_at", { ascending: false });
-
-  console.log("getReportsByOrganization -> reports:", data);
-  console.log("getReportsByOrganization -> error:", error);
-
-  if (error) throw error;
-  return data || [];
+  return apiFetch(`/organizations/${organizationId}/reports`);
 }

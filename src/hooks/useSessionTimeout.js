@@ -1,36 +1,33 @@
-import { useEffect } from "react"
-import { supabase } from "../supabase"
+import { useEffect } from "react";
+import { authApi } from "../api/auth";
 
-const TIMEOUT = (30 * 60 * 1000) * 2 // 60 минут
-
-export function useSessionTimeout() {
+export function useSessionTimeout({ onExpired, intervalMs = 60_000 } = {}) {
   useEffect(() => {
-    let timer
+    let active = true;
 
-    const resetTimer = () => {
-      clearTimeout(timer)
+    async function checkSession() {
+      try {
+        const session = await authApi.getSession();
+        if (!active) return;
 
-      timer = setTimeout(async () => {
-        console.log("Session expired (idle)")
-        await supabase.auth.signOut()
-        window.location.href = "/login"
-      }, TIMEOUT)
+        if (!session) {
+          onExpired?.();
+          return;
+        }
+
+        await authApi.getMyProfile();
+      } catch (_) {
+        if (!active) return;
+        onExpired?.();
+      }
     }
 
-    // события активности
-    const events = ["mousemove", "keydown", "click", "scroll"]
-
-    events.forEach(event => {
-      window.addEventListener(event, resetTimer)
-    })
-
-    resetTimer()
+    checkSession();
+    const timer = window.setInterval(checkSession, intervalMs);
 
     return () => {
-      clearTimeout(timer)
-      events.forEach(event => {
-        window.removeEventListener(event, resetTimer)
-      })
-    }
-  }, [])
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [intervalMs, onExpired]);
 }
