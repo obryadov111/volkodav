@@ -3,9 +3,19 @@ import AppCard from "../components/ui/AppCard";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
 import OrgGate from "../components/OrgGate";
+import ComplianceChart from "../components/ComplianceChart";
+import TrendChart from "../components/TrendChart";
 import { Skeleton, SkeletonTable } from "../components/ui/Skeleton";
 import { useOrganization } from "../context/OrganizationContext";
 import { getDashboardSummary } from "../api/dashboard";
+import { getReportsByOrganization } from "../api/reports";
+
+function formatTrendDate(isoDate) {
+  if (!isoDate) return "";
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+}
 
 const EMPTY_SUMMARY = {
   assetsCount: 0,
@@ -28,23 +38,30 @@ export default function Dashboard() {
   } = useOrganization();
 
   const [summary, setSummary] = useState(EMPTY_SUMMARY);
+  const [reportsHistory, setReportsHistory] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function loadData() {
       if (!selectedOrganizationId) {
         setSummary(EMPTY_SUMMARY);
+        setReportsHistory([]);
         setLoading(false);
         return;
       }
 
       try {
         setLoading(true);
-        const data = await getDashboardSummary(selectedOrganizationId);
+        const [data, reports] = await Promise.all([
+          getDashboardSummary(selectedOrganizationId),
+          getReportsByOrganization(selectedOrganizationId),
+        ]);
         setSummary(data);
+        setReportsHistory(Array.isArray(reports) ? reports : []);
       } catch (error) {
         console.error("Ошибка загрузки dashboard:", error.message);
         setSummary(EMPTY_SUMMARY);
+        setReportsHistory([]);
       } finally {
         setLoading(false);
       }
@@ -54,6 +71,17 @@ export default function Dashboard() {
       loadData();
     }
   }, [selectedOrganizationId, orgLoading]);
+
+  const passedChecks = Math.max((summary.checksCount || 0) - (summary.failedChecks || 0), 0);
+
+  const trendData = [...reportsHistory]
+    .filter((report) => report.generated_at)
+    .sort((a, b) => new Date(a.generated_at) - new Date(b.generated_at))
+    .slice(-8)
+    .map((report) => ({
+      date: formatTrendDate(report.generated_at),
+      compliance: Math.round(report.compliance_score || 0),
+    }));
 
   const hasAnyData =
     summary.assetsCount > 0 ||
@@ -76,6 +104,16 @@ export default function Dashboard() {
           Сводка по организации{" "}
           <span className="text-white">{selectedOrganization?.name || "—"}</span>
         </p>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <AppCard title="Соответствие" subtitle="Доля пройденных проверок харденинга">
+          {loading ? <Skeleton className="h-[220px] w-full" /> : <ComplianceChart passed={passedChecks} failed={summary.failedChecks || 0} />}
+        </AppCard>
+
+        <AppCard title="Динамика соответствия" subtitle="Compliance score по последним отчётам">
+          {loading ? <Skeleton className="h-[220px] w-full" /> : <TrendChart data={trendData} />}
+        </AppCard>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -162,13 +200,6 @@ export default function Dashboard() {
               <SkeletonTable rows={3} cols={2} />
             ) : summary.latestReport ? (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
-                  <div className="text-sm text-zinc-400">Compliance Score</div>
-                  <div className="mt-2 text-3xl font-semibold text-blue-300">
-                    {Math.round(summary.latestReport.compliance_score || 0)}%
-                  </div>
-                </div>
-
                 <div className="grid gap-3">
                   <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
                     <span className="text-sm text-zinc-400">Дата</span>

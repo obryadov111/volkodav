@@ -8,6 +8,7 @@ import SortableHeader from "../components/ui/SortableHeader";
 import { useSort } from "../hooks/useSort";
 import { useOrganization } from "../context/OrganizationContext";
 import { getReportsByOrganization } from "../api/reports";
+import { getScoreTone } from "../utils/score";
 
 export default function Report() {
   const {
@@ -118,7 +119,9 @@ export default function Report() {
                     <td className="px-4 py-3">{item.total_checks ?? 0}</td>
                     <td className="px-4 py-3">{item.passed ?? 0}</td>
                     <td className="px-4 py-3">{item.failed ?? 0}</td>
-                    <td className="px-4 py-3 font-medium text-white">{Math.round(item.compliance_score || 0)}%</td>
+                    <td className={`px-4 py-3 font-semibold ${getScoreTone(item.compliance_score).text}`}>
+                      {Math.round(item.compliance_score || 0)}%
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -4,6 +4,7 @@ import {
   Building2,
   ChevronDown,
   LogOut,
+  Menu,
   Shield,
   UserCog,
 } from "lucide-react";
@@ -15,7 +16,7 @@ import {
 } from "../api/users";
 import { useOrganization } from "../context/OrganizationContext";
 
-export default function Topbar() {
+export default function Topbar({ onMenuClick }) {
   const navigate = useNavigate();
   const menuRef = useRef(null);
 
@@ -89,12 +90,23 @@ export default function Topbar() {
   return (
     <header className="sticky top-0 z-10 border-b border-zinc-800 bg-[#0b0f14]/95 backdrop-blur">
       <div className="flex flex-col gap-4 px-6 py-4 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <div className="text-lg font-semibold text-white">Volkodav</div>
-          <div className="text-sm text-zinc-400">
-            {selectedOrganization
-              ? `Текущая организация: ${selectedOrganization.name}`
-              : "Панель мониторинга харденинга"}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-300 hover:bg-zinc-800 hover:text-white md:hidden"
+            aria-label="Открыть меню"
+          >
+            <Menu size={18} />
+          </button>
+
+          <div>
+            <div className="text-lg font-semibold text-white">Volkodav</div>
+            <div className="text-sm text-zinc-400">
+              {selectedOrganization
+                ? `Текущая организация: ${selectedOrganization.name}`
+                : "Панель мониторинга харденинга"}
+            </div>
           </div>
         </div>
 

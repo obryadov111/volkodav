@@ -1,3 +1,4 @@
+import { AnimatePresence, motion as Motion } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -8,6 +9,7 @@ import {
   FolderKanban,
   Boxes,
   History,
+  X,
 } from "lucide-react";
 
 const menuItems = [
@@ -21,7 +23,7 @@ const menuItems = [
   { to: "/project", label: "Инфраструктура", icon: FolderKanban },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose }) {
   const location = useLocation();
 
   const getItemClassName = (path) => {
@@ -37,23 +39,69 @@ export default function Sidebar() {
     ].join(" ");
   };
 
-  return (
-    <aside className="w-72 shrink-0 border-r border-zinc-800 bg-zinc-950/80 p-4">
-      <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-        <div className="text-lg font-semibold tracking-wide text-white">Харденинг</div>
-        <div className="mt-1 text-xs text-zinc-400">
-          Hardening / Compliance UI
-        </div>
-      </div>
+  const nav = (
+    <nav className="flex flex-col gap-2">
+      {menuItems.map((item) => (
+        <Link key={item.to} to={item.to} className={getItemClassName(item.to)} onClick={onClose}>
+          <item.icon size={18} />
+          <span>{item.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
 
-      <nav className="flex flex-col gap-2">
-        {menuItems.map((item) => (
-          <Link key={item.to} to={item.to} className={getItemClassName(item.to)}>
-            <item.icon size={18} />
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
-    </aside>
+  return (
+    <>
+      {/* Десктоп: статичный сайдбар */}
+      <aside className="hidden w-72 shrink-0 border-r border-zinc-800 bg-zinc-950/80 p-4 md:block">
+        <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-lg font-semibold tracking-wide text-white">Харденинг</div>
+          <div className="mt-1 text-xs text-zinc-400">Hardening / Compliance UI</div>
+        </div>
+        {nav}
+      </aside>
+
+      {/* Мобильный/узкий экран: выезжающая панель поверх контента */}
+      <AnimatePresence>
+        {open ? (
+          <Motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-40 bg-black/60 md:hidden"
+            onClick={onClose}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {open ? (
+          <Motion.aside
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ type: "tween", duration: 0.2 }}
+            className="fixed inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-zinc-800 bg-zinc-950 p-4 md:hidden"
+          >
+            <div className="mb-6 flex items-start justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <div>
+                <div className="text-lg font-semibold tracking-wide text-white">Харденинг</div>
+                <div className="mt-1 text-xs text-zinc-400">Hardening / Compliance UI</div>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                aria-label="Закрыть меню"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {nav}
+          </Motion.aside>
+        ) : null}
+      </AnimatePresence>
+    </>
   );
 }

@@ -7,6 +7,7 @@ import OrgGate from "../components/OrgGate";
 import { SkeletonTable } from "../components/ui/Skeleton";
 import SortableHeader from "../components/ui/SortableHeader";
 import { useSort } from "../hooks/useSort";
+import { getScoreTone } from "../utils/score";
 import { useOrganization } from "../context/OrganizationContext";
 import { getSnapshotsByOrganization } from "../api/snapshots";
 import {
@@ -264,7 +265,7 @@ export default function Scans() {
                       <td className="px-4 py-3">{item.total_software ?? 0}</td>
                       <td className="px-4 py-3">{item.total_checks ?? 0}</td>
                       <td className="px-4 py-3">{item.failed ?? 0}</td>
-                      <td className="px-4 py-3 font-medium text-white">
+                      <td className={`px-4 py-3 font-semibold ${getScoreTone(item.compliance_score).text}`}>
                         {item.compliance_score != null ? `${Math.round(item.compliance_score)}%` : "—"}
                       </td>
 

@@ -1,26 +1,49 @@
-import { PieChart, Pie, Tooltip, Cell } from "recharts";
-import ChartTooltip from "./ChartTooltip";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { getScoreTone } from "../utils/score";
 
-const COLORS = ["#22c55e", "#ef4444"];
+/** Пончик pass/fail с крупным % соответствия по центру. */
+export default function ComplianceChart({ passed = 0, failed = 0 }) {
+  const total = passed + failed;
+  const score = total > 0 ? Math.round((passed / total) * 100) : null;
+  const tone = getScoreTone(score);
 
-const data = [
-  { name: "Соответствует", value: 78 },
-  { name: "Отклонения", value: 22 },
-];
+  const data =
+    total > 0
+      ? [
+          { name: "Пройдено", value: passed },
+          { name: "Провалено", value: failed },
+        ]
+      : [{ name: "Нет данных", value: 1 }];
 
-export default function ComplianceChart() {
+  const colors = total > 0 ? ["#34d399", "#fb7185"] : ["#3f3f46"];
+
   return (
-    <div className="card p-4 hover:ring-1 hover:ring-blue-500/20">
-      <p className="text-sm text-zinc-400 mb-3">Общее соответствие</p>
+    <div className="relative" style={{ width: "100%", height: 220 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            innerRadius="72%"
+            outerRadius="100%"
+            startAngle={90}
+            endAngle={-270}
+            stroke="none"
+            isAnimationActive={false}
+          >
+            {data.map((entry, index) => (
+              <Cell key={entry.name} fill={colors[index]} />
+            ))}
+          </Pie>
+        </PieChart>
+      </ResponsiveContainer>
 
-      <PieChart width={250} height={200}>
-        <Pie data={data} dataKey="value">
-        {data.map((entry, index) => (
-          <Cell key={index} fill={COLORS[index]} />
-        ))}
-      </Pie>
-        <Tooltip content={<ChartTooltip />} />
-      </PieChart>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <div className={`text-4xl font-bold ${tone.text}`}>{score != null ? `${score}%` : "—"}</div>
+        <div className="mt-1 text-xs text-zinc-500">
+          {total > 0 ? `${passed} из ${total} проверок` : "нет проверок"}
+        </div>
+      </div>
     </div>
   );
 }

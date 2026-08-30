@@ -5,27 +5,7 @@ import { useOrganization } from "../context/OrganizationContext";
 import { useSort } from "../hooks/useSort";
 import SortableHeader from "../components/ui/SortableHeader";
 import { SkeletonTable } from "../components/ui/Skeleton";
-
-function CriticalityBadge({ value }) {
-  const criticality = (value || "").toLowerCase();
-
-  const classNameMap = {
-    critical: "bg-red-500/20 text-red-300 border border-red-500/30",
-    high: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
-    medium: "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30",
-    low: "bg-green-500/20 text-green-300 border border-green-500/30",
-  };
-
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-        classNameMap[criticality] || "bg-zinc-700 text-zinc-200 border border-zinc-600"
-      }`}
-    >
-      {value || "unknown"}
-    </span>
-  );
-}
+import SeverityBadge from "../components/ui/SeverityBadge";
 
 export default function Assets() {
   const { selectedOrganization } = useOrganization();
@@ -184,7 +164,7 @@ export default function Assets() {
                     <td className="px-4 py-3 text-zinc-300">{asset.os || "—"}</td>
                     <td className="px-4 py-3 text-zinc-300">{asset.asset_type || "—"}</td>
                     <td className="px-4 py-3">
-                      <CriticalityBadge value={asset.criticality} />
+                      <SeverityBadge value={asset.criticality} />
                     </td>
                     <td className="px-4 py-3 text-zinc-300">
                       {asset.environment_name || "—"}

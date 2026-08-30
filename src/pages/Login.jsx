@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { Shield } from "lucide-react";
 import { authApi } from "../api/auth";
 
 export default function Login() {
@@ -84,11 +85,30 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-        <h1 className="text-3xl font-bold mb-2">Харденинг</h1>
-        <p className="text-zinc-400 mb-6">Система автоматизации харденинга</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950 px-4 text-white">
+      {/* точечная сетка + мягкое свечение — визуальная идентичность продукта */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          backgroundImage: "radial-gradient(circle, rgba(63,63,70,.6) 1px, transparent 1px)",
+          backgroundSize: "28px 28px",
+        }}
+      />
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{ background: "radial-gradient(circle, rgba(59,130,246,.18), transparent 70%)" }}
+      />
 
+      <div className="relative w-full max-w-md">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 text-blue-300">
+            <Shield size={28} />
+          </div>
+          <h1 className="text-3xl font-bold">Харденинг</h1>
+          <p className="mt-2 text-sm text-zinc-400">Автоматизация харденинга ИБ-инфраструктуры</p>
+        </div>
+
+      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
         {error && (
           <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
             {error}
@@ -174,6 +194,7 @@ export default function Login() {
             </button>
           </form>
         )}
+      </div>
       </div>
     </div>
   );

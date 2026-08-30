@@ -5,6 +5,8 @@ import EmptyState from "../components/ui/EmptyState";
 import OrgGate from "../components/OrgGate";
 import { SkeletonTable } from "../components/ui/Skeleton";
 import SortableHeader from "../components/ui/SortableHeader";
+import SeverityBadge from "../components/ui/SeverityBadge";
+import CheckStatusBadge from "../components/ui/CheckStatusBadge";
 import { useSort } from "../hooks/useSort";
 import { useOrganization } from "../context/OrganizationContext";
 import { getHardeningByOrganization } from "../api/hardening";
@@ -123,10 +125,10 @@ export default function Hardening() {
                       <div className="font-medium text-white">{item.rule?.title || "—"}</div>
                       <div className="text-xs text-zinc-500">{item.rule?.rule_code || "—"}</div>
                     </td>
-                    <td className="px-4 py-3">{item.rule?.severity || "—"}</td>
+                    <td className="px-4 py-3"><SeverityBadge value={item.rule?.severity} /></td>
                     <td className="px-4 py-3">{item.actual_value || "—"}</td>
                     <td className="px-4 py-3">{item.expected_value || item.rule?.expected_value || "—"}</td>
-                    <td className="px-4 py-3">{item.status || "—"}</td>
+                    <td className="px-4 py-3"><CheckStatusBadge value={item.status} /></td>
                     <td className="px-4 py-3">{item.checked_at?.slice(0, 10) || "—"}</td>
                   </tr>
                 ))}
