@@ -56,6 +56,44 @@ def test_superadmin_sees_all_organizations(client, make_org, make_user, auth_hea
     assert len(resp.json()) == 2
 
 
+def test_asset_details_denied_for_non_member(client, make_org, make_user, add_membership, auth_header, make_agent_key):
+    org_id = make_org("Asset Org")
+    other_org = make_org("Other Org")
+    agent_key = make_agent_key(org_id)
+    ingest_resp = client.post(
+        "/ingest",
+        json={"environment": "prod", "asset": {"hostname": "asset-host"}, "facts": {}},
+        headers={"X-Agent-Api-Key": agent_key},
+    )
+    asset_id = ingest_resp.json()["asset_id"]
+
+    outsider = make_user("outsider@example.com", "secret123")
+    add_membership(outsider, other_org, role="viewer")
+    headers = auth_header("outsider@example.com", "secret123")
+
+    resp = client.get(f"/assets/{asset_id}", headers=headers)
+    assert resp.status_code == 403
+
+
+def test_asset_details_allowed_for_org_member(client, make_org, make_user, add_membership, auth_header, make_agent_key):
+    org_id = make_org("Asset Org 2")
+    agent_key = make_agent_key(org_id)
+    ingest_resp = client.post(
+        "/ingest",
+        json={"environment": "prod", "asset": {"hostname": "asset-host-2"}, "facts": {}},
+        headers={"X-Agent-Api-Key": agent_key},
+    )
+    asset_id = ingest_resp.json()["asset_id"]
+
+    member = make_user("member2@example.com", "secret123")
+    add_membership(member, org_id, role="viewer")
+    headers = auth_header("member2@example.com", "secret123")
+
+    resp = client.get(f"/assets/{asset_id}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["hostname"] == "asset-host-2"
+
+
 def test_my_role_reflects_membership_not_hardcoded_admin(client, make_org, make_user, add_membership, auth_header):
     org_id = make_org("Role Org")
     user_id = make_user("viewer@example.com", "secret123")
