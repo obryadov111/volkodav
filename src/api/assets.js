@@ -1,6 +1,14 @@
 import { apiFetch } from "./client";
 
+export async function getAssets() {
+  return apiFetch("/assets");
+}
+
 export async function getAssetsByOrganization(organizationId) {
+  if (!organizationId) {
+    return [];
+  }
+
   return apiFetch(`/organizations/${organizationId}/assets`);
 }
 

@@ -23,4 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 
-echo ".env" >> .gitignore
+.env
+**/.env
+
+# Python backend
+**/__pycache__/
+**/.venv/
+**/.pytest_cache/
+*.pyc

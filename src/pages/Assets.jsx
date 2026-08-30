@@ -1,144 +1,193 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import AppCard from "../components/ui/AppCard";
-import StatCard from "../components/ui/StatCard";
-import EmptyState from "../components/ui/EmptyState";
-import ErrorState from "../components/ui/ErrorState";
-import { useOrganization } from "../context/OrganizationContext";
 import { getAssetsByOrganization } from "../api/assets";
+import { useOrganization } from "../context/OrganizationContext";
 
-export default function Assets() {
-  const {
-    selectedOrganization,
-    selectedOrganizationId,
-    loading: orgLoading,
-    hasOrganizations,
-    error: orgError,
-  } = useOrganization();
+function CriticalityBadge({ value }) {
+  const criticality = (value || "").toLowerCase();
 
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    async function loadData() {
-      if (!selectedOrganizationId) {
-        setRows([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const data = await getAssetsByOrganization(selectedOrganizationId);
-        setRows(data);
-      } catch (error) {
-        console.error("Ошибка загрузки активов:", error.message);
-        setRows([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    if (!orgLoading) {
-      loadData();
-    }
-  }, [selectedOrganizationId, orgLoading]);
-
-  if (orgLoading) {
-    return <div className="text-zinc-400">Загрузка организаций...</div>;
-  }
-
-  if (orgError) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Активы</h1>
-        <ErrorState title="Ошибка подключения к БД" description={orgError} />
-      </div>
-    );
-  }
-
-  if (!hasOrganizations) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Активы</h1>
-        <EmptyState
-          title="Нет организаций"
-          description="Таблица client_organizations пустая. Сначала добавь хотя бы одну организацию."
-        />
-      </div>
-    );
-  }
-
-  const criticalCount = rows.filter((item) => item.criticality === "critical").length;
-  const highCount = rows.filter((item) => item.criticality === "high").length;
-  const osCount = [...new Set(rows.map((item) => item.os).filter(Boolean))].length;
+  const classNameMap = {
+    critical: "bg-red-500/20 text-red-300 border border-red-500/30",
+    high: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
+    medium: "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30",
+    low: "bg-green-500/20 text-green-300 border border-green-500/30",
+  };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Активы</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Инвентаризация инфраструктуры по организации{" "}
-          <span className="text-white">{selectedOrganization?.name || "—"}</span>
-        </p>
-      </div>
+    <span
+      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+        classNameMap[criticality] || "bg-zinc-700 text-zinc-200 border border-zinc-600"
+      }`}
+    >
+      {value || "unknown"}
+    </span>
+  );
+}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatCard label="Всего активов" value={loading ? "..." : rows.length} hint="Все обнаруженные хосты" tone="info" />
-        <StatCard label="Critical" value={loading ? "..." : criticalCount} hint="Максимальный приоритет" tone="danger" />
-        <StatCard label="High" value={loading ? "..." : highCount} hint="Повышенный риск" tone="warning" />
-        <StatCard label="ОС" value={loading ? "..." : osCount} hint="Уникальные платформы" tone="default" />
-      </div>
+export default function Assets() {
+  const { selectedOrganization } = useOrganization();
 
-      <AppCard title="Список активов" subtitle="Хосты и узлы выбранной организации">
-        {loading ? (
-          <div className="text-zinc-400">Загрузка...</div>
-        ) : rows.length === 0 ? (
-          <EmptyState
-            title="Нет активов"
-            description="Для выбранной организации в таблице assets пока нет записей."
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+
+  async function loadAssets(showRefreshState = false) {
+    if (!selectedOrganization?.id) {
+      setAssets([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setError("");
+
+      if (showRefreshState) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      const data = await getAssetsByOrganization(selectedOrganization.id);
+      setAssets(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки активов:", err);
+      setError(err.message || "Не удалось загрузить активы");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAssets();
+  }, [selectedOrganization?.id]);
+
+  const filteredAssets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    if (!q) {
+      return assets;
+    }
+
+    return assets.filter((asset) => {
+      return [
+        asset.hostname,
+        asset.ip_address,
+        asset.os,
+        asset.asset_type,
+        asset.criticality,
+        asset.environment_name,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q));
+    });
+  }, [assets, search]);
+
+  if (!selectedOrganization?.id) {
+    return (
+      <div className="p-6 text-zinc-300">
+        <h1 className="text-2xl font-semibold mb-2">Assets</h1>
+        <p>Сначала выбери организацию.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 text-white">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Assets</h1>
+          <p className="text-sm text-zinc-400 mt-1">
+            Организация: {selectedOrganization.name || "Без названия"}
+          </p>
+        </div>
+
+        <div className="flex gap-3">
+          <input
+            type="text"
+            placeholder="Поиск по hostname, IP, OS..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
           />
-        ) : (
+
+          <button
+            type="button"
+            onClick={() => loadAssets(true)}
+            disabled={refreshing}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-60"
+          >
+            {refreshing ? "Обновляем..." : "Обновить"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-300">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
+          Загрузка активов...
+        </div>
+      ) : filteredAssets.length === 0 ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
+          Для выбранной организации активы не найдены.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-zinc-800 text-left text-zinc-400">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-zinc-950 text-zinc-400">
                 <tr>
                   <th className="px-4 py-3">Hostname</th>
                   <th className="px-4 py-3">IP</th>
-                  <th className="px-4 py-3">ОС</th>
-                  <th className="px-4 py-3">Тип</th>
+                  <th className="px-4 py-3">OS</th>
+                  <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Criticality</th>
-                  <th className="px-4 py-3">Контур</th>
-                  <th className="px-4 py-3">Детали</th>
+                  <th className="px-4 py-3">Environment</th>
+                  <th className="px-4 py-3">Software</th>
+                  <th className="px-4 py-3">Failed checks</th>
                 </tr>
               </thead>
+
               <tbody>
-                {rows.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-zinc-800/60 text-zinc-200 transition hover:bg-zinc-800/40"
-                  >
-                    <td className="px-4 py-3 font-medium text-white">{item.hostname}</td>
-                    <td className="px-4 py-3">{item.ip_address || "—"}</td>
-                    <td className="px-4 py-3">{item.os || "—"}</td>
-                    <td className="px-4 py-3">{item.asset_type || "—"}</td>
-                    <td className="px-4 py-3">{item.criticality || "—"}</td>
-                    <td className="px-4 py-3">{item.environment?.name || "—"}</td>
+                {filteredAssets.map((asset) => (
+                  <tr key={asset.id} className="border-t border-zinc-800">
+                    <td className="px-4 py-3 font-medium">
+			  <Link
+			    to={`/assets/${asset.id}`}
+			    className="text-blue-400 hover:text-blue-300 hover:underline"
+			  >
+			    {asset.hostname}
+			  </Link>
+		    </td>
+                    <td className="px-4 py-3 text-zinc-300">{asset.ip_address || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{asset.os || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{asset.asset_type || "—"}</td>
                     <td className="px-4 py-3">
-                      <Link
-                        to={`/assets/${item.id}`}
-                        className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-800"
-                      >
-                        Открыть
-                      </Link>
+                      <CriticalityBadge value={asset.criticality} />
                     </td>
+                    <td className="px-4 py-3 text-zinc-300">
+                      {asset.environment_name || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-300">{asset.software_count ?? 0}</td>
+                    <td className="px-4 py-3 text-zinc-300">{asset.failed_checks_count ?? 0}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </AppCard>
+
+          <div className="border-t border-zinc-800 px-4 py-3 text-sm text-zinc-400">
+            Всего активов: {filteredAssets.length}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,24 +5,25 @@ import { authApi } from "../api/auth";
 export default function Login() {
   const navigate = useNavigate();
 
-  const [step, setStep] = useState("login");
+  const [step, setStep] = useState("credentials"); // "credentials" | "2fa"
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
 
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [totpCode, setTotpCode] = useState("");
-  const [backupCode, setBackupCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [tempToken, setTempToken] = useState("");
+  const [code, setCode] = useState("");
+
   const [hasCheckedSession, setHasCheckedSession] = useState(false);
   const [hasSession, setHasSession] = useState(false);
 
   useEffect(() => {
     authApi
       .getSession()
-      .then((session) => setHasSession(Boolean(session)))
+      .then((session) => {
+        setHasSession(Boolean(session));
+      })
       .catch(() => setHasSession(false))
       .finally(() => setHasCheckedSession(true));
   }, []);
@@ -30,20 +31,28 @@ export default function Login() {
   async function handleLogin(e) {
     e.preventDefault();
     setError("");
-    setInfo("");
-    setLoading(true);
 
     try {
-      const result = await authApi.login(loginEmail, loginPassword);
+      if (!email.trim()) {
+        throw new Error("Введите email");
+      }
 
-      if (result.two_factor_required) {
+      if (!password.trim()) {
+        throw new Error("Введите пароль");
+      }
+
+      setLoading(true);
+      const data = await authApi.login(email, password);
+
+      if (data.two_factor_required) {
+        setTempToken(data.temp_token);
         setStep("2fa");
-        setInfo("Введите код из приложения-аутентификатора.");
         return;
       }
 
       navigate("/", { replace: true });
     } catch (err) {
+      console.error("Ошибка входа:", err.message);
       setError(err.message || "Ошибка входа");
     } finally {
       setLoading(false);
@@ -53,28 +62,18 @@ export default function Login() {
   async function handleVerify2FA(e) {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     try {
-      await authApi.verify2FA(totpCode);
+      if (!code.trim()) {
+        throw new Error("Введите код из приложения-аутентификатора");
+      }
+
+      setLoading(true);
+      await authApi.verify2FA(tempToken, code);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Неверный код 2FA");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleVerifyBackupCode(e) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      await authApi.verifyBackupCode(backupCode);
-      navigate("/", { replace: true });
-    } catch (err) {
-      setError(err.message || "Неверный backup code");
+      console.error("Ошибка проверки кода:", err.message);
+      setError(err.message || "Неверный код");
     } finally {
       setLoading(false);
     }
@@ -86,46 +85,38 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
-        <h1 className="text-2xl font-semibold mb-2">Volkodav</h1>
-        <p className="text-sm text-zinc-400 mb-6">
-          {step === "login" ? "Вход в систему" : "Подтверждение 2FA"}
-        </p>
+      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+        <h1 className="text-3xl font-bold mb-2">Yakilka</h1>
+        <p className="text-zinc-400 mb-6">Система автоматизации харденинга</p>
 
-        {error ? (
-          <div className="mb-4 rounded-lg border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
             {error}
           </div>
-        ) : null}
+        )}
 
-        {info ? (
-          <div className="mb-4 rounded-lg border border-blue-900 bg-blue-950/40 px-3 py-2 text-sm text-blue-300">
-            {info}
-          </div>
-        ) : null}
-
-        {step === "login" ? (
+        {step === "credentials" ? (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm text-zinc-400">Email</label>
+              <label className="mb-1 block text-sm text-zinc-300">Email</label>
               <input
                 type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="admin@example.com"
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none focus:border-blue-500"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
+                placeholder="admin@yakilka.local"
                 autoComplete="username"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-sm text-zinc-400">Пароль</label>
+              <label className="mb-1 block text-sm text-zinc-300">Пароль</label>
               <input
                 type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
                 placeholder="Введите пароль"
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none focus:border-blue-500"
                 autoComplete="current-password"
               />
             </div>
@@ -133,94 +124,55 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium transition hover:bg-blue-500 disabled:opacity-60"
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:opacity-60"
             >
-              {loading ? "Входим..." : "Войти"}
+              {loading ? "Вход..." : "Войти"}
             </button>
+
+            <p className="text-center text-xs text-zinc-500">
+              Аккаунты создаются администратором системы
+            </p>
           </form>
         ) : (
-          <div className="space-y-4">
-            <div className="flex rounded-lg border border-zinc-800 p-1">
-              <button
-                type="button"
-                onClick={() => setUseBackupCode(false)}
-                className={`flex-1 rounded-md px-3 py-2 text-sm ${
-                  !useBackupCode ? "bg-blue-600 text-white" : "text-zinc-400"
-                }`}
-              >
-                Код из приложения
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseBackupCode(true)}
-                className={`flex-1 rounded-md px-3 py-2 text-sm ${
-                  useBackupCode ? "bg-blue-600 text-white" : "text-zinc-400"
-                }`}
-              >
-                Backup code
-              </button>
+          <form onSubmit={handleVerify2FA} className="space-y-4">
+            <p className="text-sm text-zinc-400">
+              Введите 6-значный код из приложения-аутентификатора
+            </p>
+
+            <div>
+              <label className="mb-1 block text-sm text-zinc-300">Код 2FA</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoFocus
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white text-center text-lg tracking-[0.4em] outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
+                placeholder="000000"
+                maxLength={6}
+              />
             </div>
 
-            {!useBackupCode ? (
-              <form onSubmit={handleVerify2FA} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm text-zinc-400">6-значный код</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value)}
-                    placeholder="123456"
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium transition hover:bg-blue-500 disabled:opacity-60"
-                >
-                  {loading ? "Проверяем..." : "Подтвердить"}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyBackupCode} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm text-zinc-400">Backup code</label>
-                  <input
-                    type="text"
-                    value={backupCode}
-                    onChange={(e) => setBackupCode(e.target.value)}
-                    placeholder="AB12-CD34"
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium transition hover:bg-blue-500 disabled:opacity-60"
-                >
-                  {loading ? "Проверяем..." : "Войти по backup code"}
-                </button>
-              </form>
-            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+            >
+              {loading ? "Проверка..." : "Подтвердить"}
+            </button>
 
             <button
               type="button"
               onClick={() => {
-                setStep("login");
+                setStep("credentials");
+                setCode("");
                 setError("");
-                setInfo("");
-                setTotpCode("");
-                setBackupCode("");
               }}
-              className="w-full rounded-lg border border-zinc-800 px-4 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800"
+              className="w-full text-center text-sm text-zinc-400 hover:text-zinc-200"
             >
               Назад
             </button>
-          </div>
+          </form>
         )}
       </div>
     </div>

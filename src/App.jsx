@@ -27,7 +27,7 @@ export default function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="assets" element={<Assets />} />
-              <Route path="assets/:id" element={<AssetDetails />} />
+              <Route path="assets/:assetId" element={<AssetDetails />} />
               <Route path="hardening" element={<Hardening />} />
               <Route path="policies" element={<Policies />} />
               <Route path="report" element={<Report />} />

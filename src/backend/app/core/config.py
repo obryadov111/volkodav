@@ -20,5 +20,11 @@ class Settings(BaseSettings):
     FIRST_ADMIN_PASSWORD: str | None = None
     FIRST_ADMIN_NAME: str | None = None
 
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost,http://192.168.0.147:5173"
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
 
 settings = Settings()

@@ -1,173 +1,254 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import AppCard from "../components/ui/AppCard";
-import StatCard from "../components/ui/StatCard";
+import { Link, useParams } from "react-router-dom";
 import { getAssetById } from "../api/assets";
-import { getSoftwareByAsset } from "../api/software";
-import { getHardeningByAsset } from "../api/hardening";
+
+function CriticalityBadge({ value }) {
+  const criticality = (value || "").toLowerCase();
+
+  const classNameMap = {
+    critical: "bg-red-500/20 text-red-300 border border-red-500/30",
+    high: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
+    medium: "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30",
+    low: "bg-green-500/20 text-green-300 border border-green-500/30",
+  };
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+        classNameMap[criticality] || "bg-zinc-700 text-zinc-200 border border-zinc-600"
+      }`}
+    >
+      {value || "unknown"}
+    </span>
+  );
+}
+
+function CheckStatusBadge({ value }) {
+  const status = (value || "").toLowerCase();
+
+  const classNameMap = {
+    pass: "bg-green-500/20 text-green-300 border border-green-500/30",
+    fail: "bg-red-500/20 text-red-300 border border-red-500/30",
+    error: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
+    skipped: "bg-zinc-700 text-zinc-300 border border-zinc-600",
+  };
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+        classNameMap[status] || "bg-zinc-700 text-zinc-300 border border-zinc-600"
+      }`}
+    >
+      {value || "unknown"}
+    </span>
+  );
+}
 
 export default function AssetDetails() {
-  const { id } = useParams();
+  const params = useParams();
+  const assetId = params.assetId || params.id || null;
 
   const [asset, setAsset] = useState(null);
-  const [software, setSoftware] = useState([]);
-  const [checks, setChecks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadAsset(currentAssetId) {
+    try {
+      setLoading(true);
+      setError("");
+
+      const data = await getAssetById(currentAssetId);
+      setAsset(data);
+    } catch (err) {
+      console.error("Ошибка загрузки актива:", err);
+      setError(err.message || "Не удалось загрузить актив");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadData() {
-      if (!id) return;
-
-      try {
-        setLoading(true);
-
-        const [assetData, softwareData, checksData] = await Promise.all([
-          getAssetById(id),
-          getSoftwareByAsset(id),
-          getHardeningByAsset(id),
-        ]);
-
-        setAsset(assetData);
-        setSoftware(softwareData);
-        setChecks(checksData);
-      } catch (error) {
-        console.error("Ошибка загрузки карточки актива:", error.message);
-      } finally {
-        setLoading(false);
-      }
+    if (!assetId) {
+      setError("Не передан идентификатор актива");
+      setLoading(false);
+      return;
     }
 
-    loadData();
-  }, [id]);
-
-  const passedChecks = checks.filter((item) => item.status === "pass").length;
-  const failedChecks = checks.filter((item) => item.status === "fail").length;
+    loadAsset(assetId);
+  }, [assetId]);
 
   if (loading) {
-    return <div className="text-zinc-400">Загрузка...</div>;
+    return (
+      <div className="p-6 text-white">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
+          Загрузка актива...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 text-white">
+        <div className="mb-4">
+          <Link to="/assets" className="text-blue-400 hover:text-blue-300">
+            ← Назад к списку активов
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-red-300">
+          {error}
+        </div>
+      </div>
+    );
   }
 
   if (!asset) {
-    return <div className="text-zinc-500">Актив не найден</div>;
+    return (
+      <div className="p-6 text-white">
+        <div className="mb-4">
+          <Link to="/assets" className="text-blue-400 hover:text-blue-300">
+            ← Назад к списку активов
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
+          Актив не найден.
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-white">{asset.hostname}</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Детальная карточка актива и связанные результаты аудита
-        </p>
+    <div className="p-6 text-white space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <Link to="/assets" className="text-blue-400 hover:text-blue-300 text-sm">
+            ← Назад к списку активов
+          </Link>
+          <h1 className="mt-2 text-2xl font-semibold">{asset.hostname}</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            Подробная информация об активе
+          </p>
+        </div>
+
+        <CriticalityBadge value={asset.criticality} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatCard label="IP" value={asset.ip_address || "—"} hint="Сетевой адрес" tone="info" />
-        <StatCard label="ОС" value={asset.os || "—"} hint="Операционная система" tone="default" />
-        <StatCard label="ПО" value={software.length} hint="Привязанные программные компоненты" tone="default" />
-        <StatCard label="Failed checks" value={failedChecks} hint="Нарушения по активу" tone="danger" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">IP address</div>
+          <div className="mt-2 text-lg font-medium">{asset.ip_address || "—"}</div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">OS</div>
+          <div className="mt-2 text-lg font-medium">{asset.os || "—"}</div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">Environment</div>
+          <div className="mt-2 text-lg font-medium">{asset.environment_name || "—"}</div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">Asset type</div>
+          <div className="mt-2 text-lg font-medium">{asset.asset_type || "—"}</div>
+        </div>
       </div>
 
-      <AppCard title="Общая информация" subtitle="Параметры выбранного актива">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Hostname</div>
-            <div className="mt-2 text-base font-medium text-white">{asset.hostname}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Тип</div>
-            <div className="mt-2 text-base font-medium text-white">{asset.asset_type || "—"}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Criticality</div>
-            <div className="mt-2 text-base font-medium text-white">{asset.criticality || "—"}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Контур</div>
-            <div className="mt-2 text-base font-medium text-white">{asset.environment?.name || "—"}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Дата добавления</div>
-            <div className="mt-2 text-base font-medium text-white">{asset.created_at?.slice(0, 10) || "—"}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Passed / Failed</div>
-            <div className="mt-2 text-base font-medium text-white">
-              {passedChecks} / {failedChecks}
-            </div>
-          </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">Software count</div>
+          <div className="mt-2 text-2xl font-semibold">{asset.software_count ?? 0}</div>
         </div>
-      </AppCard>
 
-      <AppCard title="Инвентаризация ПО" subtitle="Компоненты, обнаруженные на активе">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-zinc-800 text-left text-zinc-400">
-              <tr>
-                <th className="px-4 py-3">Название</th>
-                <th className="px-4 py-3">Версия</th>
-                <th className="px-4 py-3">Вендор</th>
-                <th className="px-4 py-3">Категория</th>
-                <th className="px-4 py-3">Тип</th>
-              </tr>
-            </thead>
-            <tbody>
-              {software.map((item) => (
-                <tr key={item.id} className="border-b border-zinc-800/60 text-zinc-200">
-                  <td className="px-4 py-3 font-medium text-white">{item.name}</td>
-                  <td className="px-4 py-3">{item.version || "—"}</td>
-                  <td className="px-4 py-3">{item.vendor || "—"}</td>
-                  <td className="px-4 py-3">{item.category || "—"}</td>
-                  <td className="px-4 py-3">{item.type || "—"}</td>
-                </tr>
-              ))}
-              {!software.length && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
-                    ПО для этого актива не найдено
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">Checks count</div>
+          <div className="mt-2 text-2xl font-semibold">{asset.checks_count ?? 0}</div>
         </div>
-      </AppCard>
 
-      <AppCard title="Hardening checks" subtitle="Проверки безопасности по активу">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-zinc-800 text-left text-zinc-400">
-              <tr>
-                <th className="px-4 py-3">Rule</th>
-                <th className="px-4 py-3">Severity</th>
-                <th className="px-4 py-3">Actual</th>
-                <th className="px-4 py-3">Expected</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {checks.map((item) => (
-                <tr key={item.id} className="border-b border-zinc-800/60 text-zinc-200">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-white">{item.rule?.title || "—"}</div>
-                    <div className="text-xs text-zinc-500">{item.rule?.rule_code || "—"}</div>
-                  </td>
-                  <td className="px-4 py-3">{item.rule?.severity || "—"}</td>
-                  <td className="px-4 py-3">{item.actual_value || "—"}</td>
-                  <td className="px-4 py-3">{item.expected_value || item.rule?.expected_value || "—"}</td>
-                  <td className="px-4 py-3">{item.status || "—"}</td>
-                </tr>
-              ))}
-              {!checks.length && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
-                    Для актива пока нет результатов проверок
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="text-sm text-zinc-400">Failed checks</div>
+          <div className="mt-2 text-2xl font-semibold">{asset.failed_checks_count ?? 0}</div>
         </div>
-      </AppCard>
+      </div>
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="border-b border-zinc-800 px-4 py-3">
+          <h2 className="text-lg font-semibold">Installed software</h2>
+        </div>
+
+        {asset.software?.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-zinc-950 text-zinc-400">
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Version</th>
+                  <th className="px-4 py-3">Vendor</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {asset.software.map((item) => (
+                  <tr key={item.id} className="border-t border-zinc-800">
+                    <td className="px-4 py-3 font-medium">{item.name}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.version || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.vendor || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.category || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.type || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-4 py-6 text-zinc-400">ПО для этого актива не найдено.</div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="border-b border-zinc-800 px-4 py-3">
+          <h2 className="text-lg font-semibold">Hardening checks</h2>
+        </div>
+
+        {asset.checks?.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-zinc-950 text-zinc-400">
+                <tr>
+                  <th className="px-4 py-3">Check ID</th>
+                  <th className="px-4 py-3">Rule ID</th>
+                  <th className="px-4 py-3">Actual value</th>
+                  <th className="px-4 py-3">Expected value</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Checked at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {asset.checks.map((item) => (
+                  <tr key={item.id} className="border-t border-zinc-800">
+                    <td className="px-4 py-3 text-zinc-300">{item.id}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.rule_id || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.actual_value || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">{item.expected_value || "—"}</td>
+                    <td className="px-4 py-3">
+                      <CheckStatusBadge value={item.status} />
+                    </td>
+                    <td className="px-4 py-3 text-zinc-300">
+                      {item.checked_at ? new Date(item.checked_at).toLocaleString() : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-4 py-6 text-zinc-400">Проверки для этого актива не найдены.</div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,16 +1,26 @@
 version: "3.9"
 
 services:
+  # NB: this host's firewall drops new inbound connections on custom docker
+  # bridge networks (only pre-existing/established ones keep working) and
+  # only allows fresh host-port-forwards on the true default "bridge"
+  # network. Docker Compose can't attach a service to the unnamed default
+  # "bridge" network (it always requests a network-scoped alias, which
+  # Docker refuses there), so until the firewall itself is fixed, this
+  # container is actually run/restarted by hand (see project chat log) —
+  # first on "bridge" for the host port, then connected to diplom_db_net
+  # to resolve diploma_db by name. This compose definition is the target
+  # state to switch back to once the iptables rule is corrected.
   backend:
     build:
-      context: ./backend
+      context: ./src/backend
     container_name: hardening_backend
     env_file:
-      - ./backend/.env
+      - ./src/backend/.env
     ports:
       - "8000:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - diplom_db_net
     restart: unless-stopped
 
   frontend:
@@ -20,6 +30,11 @@ services:
     container_name: hardening_frontend
     restart: unless-stopped
 
+  # frontend/nginx are not deployed yet (see chat) — when they are, nginx
+  # will hit the same custom-bridge port-forward issue on its "80:80"
+  # publish and will need the same legacy_bridge treatment as backend,
+  # while still sharing the default network with backend/frontend for
+  # service-name resolution (proxy_pass http://backend:8000/).
   nginx:
     image: nginx:1.27-alpine
     container_name: hardening_nginx
@@ -31,3 +46,11 @@ services:
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
+
+networks:
+  diplom_db_net:
+    external: true
+    name: diplom-hardening_default
+  legacy_bridge:
+    external: true
+    name: bridge

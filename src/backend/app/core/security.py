@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import base64
 import os
+import secrets
 
 from cryptography.fernet import Fernet
 from jose import jwt
@@ -48,3 +49,12 @@ def hash_backup_code(code: str) -> str:
 def generate_random_password(length: int = 24) -> str:
     alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*"
     return "".join(alphabet[ord(os.urandom(1)) % len(alphabet)] for _ in range(length))
+
+
+def generate_agent_api_key() -> str:
+    """Ключ агента-сборщика. Выдаётся один раз при создании — хранится только hash."""
+    return "yak_" + secrets.token_urlsafe(32)
+
+
+def hash_agent_api_key(key: str) -> str:
+    return sha256(key.encode("utf-8")).hexdigest()
