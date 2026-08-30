@@ -92,7 +92,9 @@ export async function apiFetch(path, options = {}) {
       } else {
         detail = await response.text();
       }
-    } catch (_) {}
+    } catch {
+      // ответ не распарсился как JSON/текст — используем detail по умолчанию
+    }
     throw new Error(detail || "Ошибка запроса");
   }
 
@@ -125,7 +127,9 @@ export async function apiDownload(path, options = {}) {
     let detail = "Ошибка скачивания";
     try {
       detail = await response.text();
-    } catch (_) {}
+    } catch {
+      // ответ не распарсился как JSON/текст — используем detail по умолчанию
+    }
     throw new Error(detail || "Ошибка скачивания");
   }
 

@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import AppCard from "../components/ui/AppCard";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
-import ErrorState from "../components/ui/ErrorState";
+import OrgGate from "../components/OrgGate";
+import { SkeletonTable } from "../components/ui/Skeleton";
+import SortableHeader from "../components/ui/SortableHeader";
+import { useSort } from "../hooks/useSort";
 import { useOrganization } from "../context/OrganizationContext";
 import { getHardeningByOrganization } from "../api/hardening";
 
@@ -52,32 +55,23 @@ export default function Hardening() {
     };
   }, [rows]);
 
-  if (orgLoading) {
-    return <div className="text-zinc-400">Загрузка организаций...</div>;
-  }
-
-  if (orgError) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Харденинг</h1>
-        <ErrorState title="Ошибка подключения к БД" description={orgError} />
-      </div>
-    );
-  }
-
-  if (!hasOrganizations) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Харденинг</h1>
-        <EmptyState
-          title="Нет организаций"
-          description="Таблица client_organizations пустая. Сначала добавь хотя бы одну организацию."
-        />
-      </div>
-    );
-  }
+  const { sortedRows, activeKey, sortDir, toggleSort } = useSort(rows, {
+    asset: (row) => row.asset?.hostname || "",
+    rule: (row) => row.rule?.title || "",
+    severity: (row) => row.rule?.severity || "",
+    actual: (row) => row.actual_value || "",
+    expected: (row) => row.expected_value || row.rule?.expected_value || "",
+    status: (row) => row.status || "",
+    checked_at: (row) => row.checked_at || "",
+  });
 
   return (
+    <OrgGate
+      title="Харденинг"
+      orgLoading={orgLoading}
+      orgError={orgError}
+      hasOrganizations={hasOrganizations}
+    >
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Харденинг</h1>
@@ -88,15 +82,15 @@ export default function Hardening() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <StatCard label="Всего проверок" value={loading ? "..." : stats.total} hint="Проверки по активам" tone="info" />
-        <StatCard label="Passed" value={loading ? "..." : stats.passed} hint="Успешно выполнены" tone="success" />
-        <StatCard label="Failed" value={loading ? "..." : stats.failed} hint="Требуют исправления" tone="danger" />
-        <StatCard label="Critical rules" value={loading ? "..." : stats.critical} hint="Критичные проверки" tone="warning" />
+        <StatCard label="Всего проверок" value={stats.total} loading={loading} hint="Проверки по активам" tone="info" />
+        <StatCard label="Passed" value={stats.passed} loading={loading} hint="Успешно выполнены" tone="success" />
+        <StatCard label="Failed" value={stats.failed} loading={loading} hint="Требуют исправления" tone="danger" />
+        <StatCard label="Critical rules" value={stats.critical} loading={loading} hint="Критичные проверки" tone="warning" />
       </div>
 
       <AppCard title="Результаты проверок" subtitle="Проверки по активам и правилам">
         {loading ? (
-          <div className="text-zinc-400">Загрузка...</div>
+          <SkeletonTable rows={6} cols={7} />
         ) : rows.length === 0 ? (
           <EmptyState
             title="Нет результатов проверок"
@@ -107,17 +101,17 @@ export default function Hardening() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-zinc-800 text-left text-zinc-400">
                 <tr>
-                  <th className="px-4 py-3">Актив</th>
-                  <th className="px-4 py-3">Правило</th>
-                  <th className="px-4 py-3">Severity</th>
-                  <th className="px-4 py-3">Actual</th>
-                  <th className="px-4 py-3">Expected</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Дата</th>
+                  <SortableHeader label="Актив" sortKey="asset" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Правило" sortKey="rule" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Severity" sortKey="severity" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Actual" sortKey="actual" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Expected" sortKey="expected" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Status" sortKey="status" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Дата" sortKey="checked_at" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((item) => (
+                {sortedRows.map((item) => (
                   <tr
                     key={item.id}
                     className="border-b border-zinc-800/60 text-zinc-200 transition hover:bg-zinc-800/40"
@@ -142,5 +136,6 @@ export default function Hardening() {
         )}
       </AppCard>
     </div>
+    </OrgGate>
   );
 }

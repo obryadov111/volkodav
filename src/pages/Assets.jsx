@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getAssetsByOrganization } from "../api/assets";
 import { useOrganization } from "../context/OrganizationContext";
+import { useSort } from "../hooks/useSort";
+import SortableHeader from "../components/ui/SortableHeader";
+import { SkeletonTable } from "../components/ui/Skeleton";
 
 function CriticalityBadge({ value }) {
   const criticality = (value || "").toLowerCase();
@@ -85,6 +88,17 @@ export default function Assets() {
     });
   }, [assets, search]);
 
+  const { sortedRows, activeKey, sortDir, toggleSort } = useSort(filteredAssets, {
+    hostname: (row) => row.hostname || "",
+    ip_address: (row) => row.ip_address || "",
+    os: (row) => row.os || "",
+    asset_type: (row) => row.asset_type || "",
+    criticality: (row) => row.criticality || "",
+    environment_name: (row) => row.environment_name || "",
+    software_count: (row) => row.software_count ?? 0,
+    failed_checks_count: (row) => row.failed_checks_count ?? 0,
+  });
+
   if (!selectedOrganization?.id) {
     return (
       <div className="p-6 text-zinc-300">
@@ -110,7 +124,7 @@ export default function Assets() {
             placeholder="Поиск по hostname, IP, OS..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
+            className="field-input w-64"
           />
 
           <button
@@ -131,8 +145,8 @@ export default function Assets() {
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
-          Загрузка активов...
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+          <SkeletonTable rows={6} cols={8} />
         </div>
       ) : filteredAssets.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
@@ -144,19 +158,19 @@ export default function Assets() {
             <table className="min-w-full text-left text-sm">
               <thead className="bg-zinc-950 text-zinc-400">
                 <tr>
-                  <th className="px-4 py-3">Hostname</th>
-                  <th className="px-4 py-3">IP</th>
-                  <th className="px-4 py-3">OS</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Criticality</th>
-                  <th className="px-4 py-3">Environment</th>
-                  <th className="px-4 py-3">Software</th>
-                  <th className="px-4 py-3">Failed checks</th>
+                  <SortableHeader label="Hostname" sortKey="hostname" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="IP" sortKey="ip_address" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="OS" sortKey="os" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Type" sortKey="asset_type" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Criticality" sortKey="criticality" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Environment" sortKey="environment_name" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Software" sortKey="software_count" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Failed checks" sortKey="failed_checks_count" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
                 </tr>
               </thead>
 
               <tbody>
-                {filteredAssets.map((asset) => (
+                {sortedRows.map((asset) => (
                   <tr key={asset.id} className="border-t border-zinc-800">
                     <td className="px-4 py-3 font-medium">
 			  <Link

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import AppCard from "../components/ui/AppCard";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
-import ErrorState from "../components/ui/ErrorState";
+import OrgGate from "../components/OrgGate";
+import { Skeleton } from "../components/ui/Skeleton";
 import { useOrganization } from "../context/OrganizationContext";
 import { getPoliciesByOrganization } from "../api/policies";
 
@@ -73,35 +74,16 @@ export default function Policies() {
     }
   }, [selectedOrganizationId, orgLoading]);
 
-  if (orgLoading) {
-    return <div className="text-zinc-400">Загрузка организаций...</div>;
-  }
-
-  if (orgError) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Политики</h1>
-        <ErrorState title="Ошибка подключения к БД" description={orgError} />
-      </div>
-    );
-  }
-
-  if (!hasOrganizations) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Политики</h1>
-        <EmptyState
-          title="Нет организаций"
-          description="Таблица client_organizations пустая. Сначала добавь хотя бы одну организацию."
-        />
-      </div>
-    );
-  }
-
   const activeCount = rows.filter((item) => item.status === "active").length;
   const reviewCount = rows.filter((item) => item.status === "review").length;
 
   return (
+    <OrgGate
+      title="Политики"
+      orgLoading={orgLoading}
+      orgError={orgError}
+      hasOrganizations={hasOrganizations}
+    >
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Политики</h1>
@@ -112,14 +94,18 @@ export default function Policies() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Всего политик" value={loading ? "..." : rows.length} hint="Нормативные профили организации" tone="info" />
-        <StatCard label="Активные" value={loading ? "..." : activeCount} hint="Используются в текущем аудите" tone="success" />
-        <StatCard label="На пересмотре" value={loading ? "..." : reviewCount} hint="Требуют согласования" tone="warning" />
+        <StatCard label="Всего политик" value={rows.length} loading={loading} hint="Нормативные профили организации" tone="info" />
+        <StatCard label="Активные" value={activeCount} loading={loading} hint="Используются в текущем аудите" tone="success" />
+        <StatCard label="На пересмотре" value={reviewCount} loading={loading} hint="Требуют согласования" tone="warning" />
       </div>
 
       <AppCard title="Реестр политик" subtitle="Политики выбранной организации">
         {loading ? (
-          <div className="text-zinc-400">Загрузка...</div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-32 w-full" />
+            ))}
+          </div>
         ) : rows.length === 0 ? (
           <EmptyState
             title="Нет политик"
@@ -171,5 +157,6 @@ export default function Policies() {
         )}
       </AppCard>
     </div>
+    </OrgGate>
   );
 }

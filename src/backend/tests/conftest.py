@@ -14,7 +14,6 @@ from app.api.deps import get_db
 from app.core.security import hash_password
 from app.main import app
 
-
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 engine = create_engine(TEST_DATABASE_URL, future=True)
 TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)

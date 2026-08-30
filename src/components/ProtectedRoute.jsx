@@ -22,7 +22,7 @@ export default function ProtectedRoute() {
 
         await authApi.getMyProfile();
         setIsAuth(true);
-      } catch (_) {
+      } catch {
         setIsAuth(false);
       } finally {
         if (mounted) setLoading(false);
@@ -43,7 +43,7 @@ export default function ProtectedRoute() {
       try {
         await authApi.getMyProfile();
         setIsAuth(true);
-      } catch (_) {
+      } catch {
         setIsAuth(false);
       } finally {
         setLoading(false);

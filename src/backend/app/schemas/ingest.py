@@ -1,22 +1,21 @@
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
 class IngestSoftwareIn(BaseModel):
     name: str
-    version: Optional[str] = None
-    vendor: Optional[str] = None
-    category: Optional[str] = None
-    type: Optional[str] = None
+    version: str | None = None
+    vendor: str | None = None
+    category: str | None = None
+    type: str | None = None
 
 
 class IngestAssetIn(BaseModel):
     hostname: str
-    ip_address: Optional[str] = None
-    os: Optional[str] = None
-    asset_type: Optional[str] = None
-    criticality: Optional[str] = None
+    ip_address: str | None = None
+    os: str | None = None
+    asset_type: str | None = None
+    criticality: str | None = None
 
 
 class IngestRequest(BaseModel):
@@ -24,7 +23,7 @@ class IngestRequest(BaseModel):
     asset: IngestAssetIn
     software: list[IngestSoftwareIn] = Field(default_factory=list)
     facts: dict = Field(default_factory=dict, description="Сырые факты по категориям: {'ssh': {'permit_root_login': 'no'}, ...}")
-    scan_label: Optional[str] = None
+    scan_label: str | None = None
 
 
 class IngestChecksSummary(BaseModel):
@@ -39,5 +38,5 @@ class IngestResponse(BaseModel):
     asset_id: str
     snapshot_id: str
     checks: IngestChecksSummary
-    compliance_score: Optional[float] = None
+    compliance_score: float | None = None
     report_id: str

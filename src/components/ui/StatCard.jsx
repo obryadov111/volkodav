@@ -1,8 +1,11 @@
+import { Skeleton } from "./Skeleton";
+
 export default function StatCard({
   label,
   value,
   hint,
   tone = "default",
+  loading = false,
 }) {
   const toneMap = {
     default: "border-zinc-800 bg-zinc-900/80 text-white",
@@ -15,7 +18,11 @@ export default function StatCard({
   return (
     <div className={`rounded-2xl border p-5 ${toneMap[tone] || toneMap.default}`}>
       <div className="text-sm text-zinc-400">{label}</div>
-      <div className="mt-3 text-3xl font-semibold">{value}</div>
+      {loading ? (
+        <Skeleton className="mt-3 h-8 w-16" />
+      ) : (
+        <div className="mt-3 text-3xl font-semibold">{value}</div>
+      )}
       {hint ? <div className="mt-2 text-xs text-zinc-400">{hint}</div> : null}
     </div>
   );

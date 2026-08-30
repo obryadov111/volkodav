@@ -16,7 +16,7 @@ export function useSessionTimeout({ onExpired, intervalMs = 60_000 } = {}) {
         }
 
         await authApi.getMyProfile();
-      } catch (_) {
+      } catch {
         if (!active) return;
         onExpired?.();
       }

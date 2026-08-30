@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import AppCard from "../components/ui/AppCard";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
-import ErrorState from "../components/ui/ErrorState";
+import OrgGate from "../components/OrgGate";
+import { SkeletonTable } from "../components/ui/Skeleton";
+import SortableHeader from "../components/ui/SortableHeader";
+import { useSort } from "../hooks/useSort";
 import { useOrganization } from "../context/OrganizationContext";
 import { getReportsByOrganization } from "../api/reports";
 
@@ -51,32 +54,21 @@ export default function Report() {
     return Math.round(total / reports.length);
   }, [reports]);
 
-  if (orgLoading) {
-    return <div className="text-zinc-400">Загрузка организаций...</div>;
-  }
-
-  if (orgError) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Отчёты</h1>
-        <ErrorState title="Ошибка подключения к БД" description={orgError} />
-      </div>
-    );
-  }
-
-  if (!hasOrganizations) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Отчёты</h1>
-        <EmptyState
-          title="Нет организаций"
-          description="Таблица client_organizations пустая. Сначала добавь хотя бы одну организацию."
-        />
-      </div>
-    );
-  }
+  const { sortedRows, activeKey, sortDir, toggleSort } = useSort(reports, {
+    date: (row) => row.generated_at || "",
+    total: (row) => row.total_checks ?? 0,
+    passed: (row) => row.passed ?? 0,
+    failed: (row) => row.failed ?? 0,
+    score: (row) => row.compliance_score ?? 0,
+  });
 
   return (
+    <OrgGate
+      title="Отчёты"
+      orgLoading={orgLoading}
+      orgError={orgError}
+      hasOrganizations={hasOrganizations}
+    >
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Отчёты</h1>
@@ -89,18 +81,19 @@ export default function Report() {
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard
           label="Последний Score"
-          value={loading ? "..." : latest ? `${Math.round(latest.compliance_score || 0)}%` : "—"}
+          value={latest ? `${Math.round(latest.compliance_score || 0)}%` : "—"}
+          loading={loading}
           hint="Последний рассчитанный показатель"
           tone="info"
         />
-        <StatCard label="Пройдено" value={loading ? "..." : latest?.passed ?? "—"} hint="Успешные проверки" tone="success" />
-        <StatCard label="Нарушения" value={loading ? "..." : latest?.failed ?? "—"} hint="Проваленные проверки" tone="danger" />
-        <StatCard label="Средний Score" value={loading ? "..." : `${avgScore}%`} hint="Среднее по отчётам" tone="default" />
+        <StatCard label="Пройдено" value={latest?.passed ?? "—"} loading={loading} hint="Успешные проверки" tone="success" />
+        <StatCard label="Нарушения" value={latest?.failed ?? "—"} loading={loading} hint="Проваленные проверки" tone="danger" />
+        <StatCard label="Средний Score" value={`${avgScore}%`} loading={loading} hint="Среднее по отчётам" tone="default" />
       </div>
 
       <AppCard title="История отчётов" subtitle="Отчёты по выбранной организации">
         {loading ? (
-          <div className="text-zinc-400">Загрузка...</div>
+          <SkeletonTable rows={5} cols={5} />
         ) : reports.length === 0 ? (
           <EmptyState
             title="Нет отчётов"
@@ -111,15 +104,15 @@ export default function Report() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-zinc-800 text-left text-zinc-400">
                 <tr>
-                  <th className="px-4 py-3">Дата</th>
-                  <th className="px-4 py-3">Всего проверок</th>
-                  <th className="px-4 py-3">Passed</th>
-                  <th className="px-4 py-3">Failed</th>
-                  <th className="px-4 py-3">Score</th>
+                  <SortableHeader label="Дата" sortKey="date" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Всего проверок" sortKey="total" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Passed" sortKey="passed" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Failed" sortKey="failed" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Score" sortKey="score" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
                 </tr>
               </thead>
               <tbody>
-                {reports.map((item) => (
+                {sortedRows.map((item) => (
                   <tr key={item.id} className="border-b border-zinc-800/60 text-zinc-200 hover:bg-zinc-800/40">
                     <td className="px-4 py-3">{item.generated_at?.slice(0, 10) || "—"}</td>
                     <td className="px-4 py-3">{item.total_checks ?? 0}</td>
@@ -134,5 +127,6 @@ export default function Report() {
         )}
       </AppCard>
     </div>
+    </OrgGate>
   );
 }

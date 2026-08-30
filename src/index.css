@@ -2,9 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* smooth UI */
-* {
-  transition: all 0.15s ease;
+body {
+  background: #0b0f14;
 }
 
 /* scrollbar как GitHub */
@@ -13,19 +12,17 @@
 }
 ::-webkit-scrollbar-thumb {
   background: #27272a;
-  border-radius: 4px;
+  border-radius: 10px;
 }
 
-body {
-  background: #0b0f14;
-}
-
-/* glow эффекты */
+/* карточки и кнопки — единственные элементы с анимацией, точечно */
 .card {
   background: #111827;
   border: 1px solid #1f2937;
   border-radius: 12px;
-  transition: all 0.2s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .card:hover {
@@ -34,38 +31,63 @@ body {
 }
 
 button {
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 button:active {
   transform: scale(0.97);
 }
 
-/* scroll красиво */
-::-webkit-scrollbar {
-  width: 6px;
+/* единый стиль текстовых полей и селектов по всему приложению */
+.field-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #27272a;
+  background: #09090b;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #ffffff;
+  outline: none;
+  transition: border-color 0.15s ease;
 }
 
-::-webkit-scrollbar-thumb {
+.field-input::placeholder {
+  color: #71717a;
+}
+
+.field-input:focus {
+  border-color: #3b82f6;
+}
+
+.field-input:disabled {
+  color: #71717a;
+}
+
+/* skeleton-заглушки при загрузке */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.skeleton {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
   background: #27272a;
-  border-radius: 10px;
+  border-radius: 0.5rem;
 }
 
-/* кнопки */
-button {
-  transition: all 0.15s ease;
-}
-
-button:active {
-  transform: scale(0.97);
-}
-
-/* hover карточек */
-.card:hover {
-  transform: translateY(-2px);
-}
-
-/* плавность */
-* {
-  transition: background-color 0.2s, border-color 0.2s;
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .card {
+    transition: none;
+  }
 }

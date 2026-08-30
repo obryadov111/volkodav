@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import jwt
@@ -11,7 +11,6 @@ from app.models.user import User
 from app.models.user_2fa import User2FA
 from app.schemas.auth import LoginRequest, LoginResponse, MeResponse, Verify2FARequest
 from app.services.twofa_service import verify_totp_code
-
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -34,7 +33,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
         return LoginResponse(two_factor_required=True, temp_token=temp_token)
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     db.commit()
     return LoginResponse(access_token=create_access_token(str(user.id)))
 
@@ -43,8 +42,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 def verify_2fa(payload: Verify2FARequest, db: Session = Depends(get_db)):
     try:
         token_payload = jwt.decode(payload.temp_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный временный токен")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный временный токен") from exc
 
     if token_payload.get("type") != "pre_2fa":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный тип токена")
@@ -60,8 +59,8 @@ def verify_2fa(payload: Verify2FARequest, db: Session = Depends(get_db)):
     if not verify_totp_code(secret, payload.code.strip()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный код 2FA")
 
-    user.last_login_at = datetime.now(timezone.utc)
-    twofa.last_used_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
+    twofa.last_used_at = datetime.now(UTC)
     db.commit()
 
     return LoginResponse(access_token=create_access_token(str(user.id)))

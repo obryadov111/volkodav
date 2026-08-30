@@ -19,8 +19,6 @@ export function OrganizationProvider({ children }) {
         setError("");
 
         const rows = await getOrganizations();
-        console.log("organizations from db:", rows);
-
         setOrganizations(rows);
 
         if (!rows.length) {
@@ -53,8 +51,6 @@ export function OrganizationProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    console.log("selectedOrganizationId:", selectedOrganizationId);
-
     if (!selectedOrganizationId) {
       localStorage.removeItem(STORAGE_KEY);
       return;
@@ -96,6 +92,7 @@ export function OrganizationProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- хук и провайдер намеренно живут в одном файле
 export function useOrganization() {
   const context = useContext(OrganizationContext);
 

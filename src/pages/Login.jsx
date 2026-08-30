@@ -103,7 +103,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
+                className="field-input"
                 placeholder="admin@hardening.local"
                 autoComplete="username"
               />
@@ -115,7 +115,7 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
+                className="field-input"
                 placeholder="Введите пароль"
                 autoComplete="current-password"
               />
@@ -147,7 +147,7 @@ export default function Login() {
                 autoFocus
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white text-center text-lg tracking-[0.4em] outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
+                className="field-input text-center text-lg tracking-[0.4em]"
                 placeholder="000000"
                 maxLength={6}
               />

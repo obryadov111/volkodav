@@ -1,6 +1,5 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -11,33 +10,33 @@ class OrganizationOut(BaseModel):
 
     id: UUID
     name: str
-    industry: Optional[str] = None
-    country: Optional[str] = None
+    industry: str | None = None
+    country: str | None = None
 
 
 class AssetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    environment_id: Optional[UUID] = None
+    environment_id: UUID | None = None
     hostname: str
-    ip_address: Optional[str] = None
-    os: Optional[str] = None
-    asset_type: Optional[str] = None
-    criticality: Optional[str] = None
-    created_at: Optional[datetime] = None
+    ip_address: str | None = None
+    os: str | None = None
+    asset_type: str | None = None
+    criticality: str | None = None
+    created_at: datetime | None = None
 
 
 class OrganizationAssetOut(BaseModel):
     id: UUID
-    environment_id: Optional[UUID] = None
-    environment_name: Optional[str] = None
+    environment_id: UUID | None = None
+    environment_name: str | None = None
     hostname: str
-    ip_address: Optional[str] = None
-    os: Optional[str] = None
-    asset_type: Optional[str] = None
-    criticality: Optional[str] = None
-    created_at: Optional[datetime] = None
+    ip_address: str | None = None
+    os: str | None = None
+    asset_type: str | None = None
+    criticality: str | None = None
+    created_at: datetime | None = None
     software_count: int = 0
     failed_checks_count: int = 0
 
@@ -46,12 +45,12 @@ class SoftwareOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    asset_id: Optional[UUID] = None
+    asset_id: UUID | None = None
     name: str
-    version: Optional[str] = None
-    vendor: Optional[str] = None
-    category: Optional[str] = None
-    type: Optional[str] = None
+    version: str | None = None
+    vendor: str | None = None
+    category: str | None = None
+    type: str | None = None
 
 
 class ScanSnapshotOut(BaseModel):
@@ -59,20 +58,20 @@ class ScanSnapshotOut(BaseModel):
 
     id: UUID
     scan_number: int
-    total_checks: Optional[int] = 0
-    passed: Optional[int] = 0
-    failed: Optional[int] = 0
-    compliance_score: Optional[Decimal] = None
-    snapshot_label: Optional[str] = None
-    status: Optional[str] = None
+    total_checks: int | None = 0
+    passed: int | None = 0
+    failed: int | None = 0
+    compliance_score: Decimal | None = None
+    snapshot_label: str | None = None
+    status: str | None = None
     total_assets: int
     total_software: int
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 class LatestReportOut(BaseModel):
-    compliance_score: Optional[float] = None
-    generated_at: Optional[datetime] = None
+    compliance_score: float | None = None
+    generated_at: datetime | None = None
     total_checks: int = 0
     failed: int = 0
 
@@ -83,6 +82,6 @@ class DashboardSummaryOut(BaseModel):
     checksCount: int = 0
     failedChecks: int = 0
     reportsCount: int = 0
-    latestReport: Optional[LatestReportOut] = None
+    latestReport: LatestReportOut | None = None
     environmentsCount: int = 0
     criticalAssets: int = 0

@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-ssr
+.git
+*.log
+*.local
+
+src/backend/.venv
+src/backend/__pycache__
+src/backend/**/__pycache__
+src/backend/.pytest_cache

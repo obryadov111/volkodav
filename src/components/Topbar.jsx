@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion as Motion } from "framer-motion";
 import {
-  Bell,
   Building2,
   ChevronDown,
   LogOut,
-  Search,
   Shield,
   UserCog,
 } from "lucide-react";
@@ -127,22 +126,6 @@ export default function Topbar() {
             </select>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 md:flex">
-            <Search size={16} className="text-zinc-500" />
-            <input
-              type="text"
-              placeholder="Поиск..."
-              className="w-56 bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
-            />
-          </div>
-
-          <button
-            type="button"
-            className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-          >
-            <Bell size={18} />
-          </button>
-
           <div className="relative" ref={menuRef}>
             <button
               type="button"
@@ -165,46 +148,54 @@ export default function Topbar() {
               <ChevronDown size={16} className="text-zinc-500" />
             </button>
 
-            {menuOpen ? (
-              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-zinc-800 bg-zinc-900 p-2 shadow-2xl">
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3">
-                  <div className="text-sm font-medium text-white">
-                    {profile?.email || "Без email"}
+            <AnimatePresence>
+              {menuOpen ? (
+                <Motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-72 rounded-2xl border border-zinc-800 bg-zinc-900 p-2 shadow-2xl"
+                >
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3">
+                    <div className="text-sm font-medium text-white">
+                      {profile?.email || "Без email"}
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-400">
+                      Роль: {roleLabel}
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-400">
+                      Организация: {selectedOrganization?.name || "—"}
+                    </div>
                   </div>
-                  <div className="mt-1 text-xs text-zinc-400">
-                    Роль: {roleLabel}
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-400">
-                    Организация: {selectedOrganization?.name || "—"}
-                  </div>
-                </div>
 
-                <div className="mt-2 flex flex-col gap-1">
-                  {currentRole === "admin" ? (
+                  <div className="mt-2 flex flex-col gap-1">
+                    {currentRole === "admin" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          navigate("/organization-users");
+                        }}
+                        className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                      >
+                        <UserCog size={16} />
+                        <span>Управление доступом</span>
+                      </button>
+                    ) : null}
+
                     <button
                       type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        navigate("/organization-users");
-                      }}
-                      className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                      onClick={handleLogout}
+                      className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-rose-300 hover:bg-zinc-800"
                     >
-                      <UserCog size={16} />
-                      <span>Управление доступом</span>
+                      <LogOut size={16} />
+                      <span>Выйти</span>
                     </button>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-rose-300 hover:bg-zinc-800"
-                  >
-                    <LogOut size={16} />
-                    <span>Выйти</span>
-                  </button>
-                </div>
-              </div>
-            ) : null}
+                  </div>
+                </Motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
         </div>
       </div>

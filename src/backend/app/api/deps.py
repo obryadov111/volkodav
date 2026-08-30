@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,7 +10,6 @@ from app.core.config import settings
 from app.core.security import hash_agent_api_key
 from app.db.session import SessionLocal
 from app.models.user import User
-
 
 bearer_scheme = HTTPBearer()
 
@@ -33,8 +32,8 @@ def get_current_user(
         subject = payload.get("sub")
         if not subject:
             raise ValueError("missing sub")
-    except (JWTError, ValueError):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
+    except (JWTError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен") from exc
 
     user = db.query(User).filter(User.id == subject).first()
     if not user:
@@ -105,7 +104,7 @@ def get_agent_organization_id(
 
     db.execute(
         text("UPDATE agent_api_keys SET last_used_at = :now WHERE id = :id"),
-        {"now": datetime.now(timezone.utc), "id": row["id"]},
+        {"now": datetime.now(UTC), "id": row["id"]},
     )
     db.commit()
 

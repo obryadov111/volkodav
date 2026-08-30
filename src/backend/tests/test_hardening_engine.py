@@ -50,8 +50,6 @@ def test_evaluate_asset_scopes_by_product_type():
 
 
 def test_compute_compliance_score():
-    rules = [rule("a", "no"), rule("b", "no"), rule("c", "no")]
-    facts = {"": {}}  # намеренно пусто по одному ключу ниже
     from app.services.hardening_engine import CheckResult
 
     results = [

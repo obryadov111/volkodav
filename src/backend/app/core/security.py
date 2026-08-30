@@ -1,15 +1,14 @@
-from datetime import datetime, timedelta, timezone
-from hashlib import sha256
 import base64
 import os
 import secrets
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 from cryptography.fernet import Fernet
 from jose import jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
-
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -23,7 +22,7 @@ def hash_password(password: str) -> str:
 
 
 def create_access_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": subject, "exp": expire}
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 

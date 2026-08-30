@@ -49,16 +49,7 @@ export default function ScanCompare() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-    if (!selectedOrganizationId && !orgLoading) {
-        return (
-          <div className="space-y-6">
-            <h1 className="text-2xl font-semibold text-white">Название страницы</h1>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-6 text-zinc-400">
-              В базе нет организаций. Добавь организацию, чтобы увидеть данные.
-            </div>
-          </div>
-        );
-      }
+
   useEffect(() => {
     async function loadData() {
       if (!beforeId || !afterId) {

@@ -6,7 +6,6 @@ from app.api.routes.data import router as data_router
 from app.api.routes.ingest import router as ingest_router
 from app.core.config import settings
 
-
 app = FastAPI(title=settings.APP_NAME)
 
 app.add_middleware(

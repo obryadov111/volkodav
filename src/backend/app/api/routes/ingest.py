@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
@@ -73,7 +73,7 @@ def ingest(
     фиксирует текущее состояние (hardening_checks), историю (scan_snapshots +
     scan_check_results) и пересчитывает compliance_score организации (hardening_reports).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     batch = IngestionBatch(organization_id=organization_id, received_at=now, source="agent", status="processing")
     db.add(batch)

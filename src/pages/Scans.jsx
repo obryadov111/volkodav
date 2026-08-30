@@ -3,7 +3,10 @@ import { Link } from "react-router-dom";
 import AppCard from "../components/ui/AppCard";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
-import ErrorState from "../components/ui/ErrorState";
+import OrgGate from "../components/OrgGate";
+import { SkeletonTable } from "../components/ui/Skeleton";
+import SortableHeader from "../components/ui/SortableHeader";
+import { useSort } from "../hooks/useSort";
 import { useOrganization } from "../context/OrganizationContext";
 import { getSnapshotsByOrganization } from "../api/snapshots";
 import {
@@ -53,6 +56,7 @@ export default function Scans() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState("");
+  const [exportError, setExportError] = useState("");
 
   useEffect(() => {
     async function loadData() {
@@ -96,6 +100,7 @@ export default function Scans() {
   async function handleExport(snapshot, format) {
     const key = `${snapshot.id}-${format}`;
     setBusyKey(key);
+    setExportError("");
 
     try {
       const existingPath =
@@ -126,38 +131,36 @@ export default function Scans() {
       await openStoredExport(path);
     } catch (error) {
       console.error(`Ошибка экспорта ${format}:`, error.message);
-      alert(`Не удалось сформировать ${format.toUpperCase()}.\n${error.message}`);
+      setExportError(`Не удалось сформировать ${format.toUpperCase()}: ${error.message}`);
     } finally {
       setBusyKey("");
     }
   }
 
-  if (orgLoading) {
-    return <div className="text-zinc-400">Загрузка организаций...</div>;
-  }
+  const previousByRow = useMemo(() => {
+    const map = new Map();
+    rows.forEach((item, index) => map.set(item.id, rows[index + 1] || null));
+    return map;
+  }, [rows]);
 
-  if (orgError) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Сканирования</h1>
-        <ErrorState title="Ошибка подключения к БД" description={orgError} />
-      </div>
-    );
-  }
-
-  if (!hasOrganizations) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-white">Сканирования</h1>
-        <EmptyState
-          title="Нет организаций"
-          description="Таблица client_organizations пустая. Сначала добавь хотя бы одну организацию."
-        />
-      </div>
-    );
-  }
+  const { sortedRows, activeKey, sortDir, toggleSort } = useSort(rows, {
+    snapshot: (row) => row.snapshot_label || row.scan_number || "",
+    date: (row) => row.created_at || "",
+    status: (row) => row.status || "",
+    assets: (row) => row.total_assets ?? 0,
+    software: (row) => row.total_software ?? 0,
+    checks: (row) => row.total_checks ?? 0,
+    failed: (row) => row.failed ?? 0,
+    score: (row) => row.compliance_score ?? 0,
+  });
 
   return (
+    <OrgGate
+      title="Сканирования"
+      orgLoading={orgLoading}
+      orgError={orgError}
+      hasOrganizations={hasOrganizations}
+    >
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Сканирования</h1>
@@ -168,26 +171,38 @@ export default function Scans() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <StatCard label="Всего snapshot" value={loading ? "..." : stats.total} hint="История сканирований" tone="info" />
-        <StatCard label="Завершено" value={loading ? "..." : stats.completed} hint="Успешно обработанные" tone="success" />
-        <StatCard label="Ошибки" value={loading ? "..." : stats.failed} hint="Неудачные запуски" tone="danger" />
+        <StatCard label="Всего snapshot" value={stats.total} loading={loading} hint="История сканирований" tone="info" />
+        <StatCard label="Завершено" value={stats.completed} loading={loading} hint="Успешно обработанные" tone="success" />
+        <StatCard label="Ошибки" value={stats.failed} loading={loading} hint="Неудачные запуски" tone="danger" />
         <StatCard
           label="Последний score"
           value={
-            loading
-              ? "..."
-              : stats.latest?.compliance_score != null
-                ? `${Math.round(stats.latest.compliance_score)}%`
-                : "—"
+            stats.latest?.compliance_score != null
+              ? `${Math.round(stats.latest.compliance_score)}%`
+              : "—"
           }
+          loading={loading}
           hint="Последний snapshot"
           tone="default"
         />
       </div>
 
+      {exportError ? (
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+          <span>{exportError}</span>
+          <button
+            type="button"
+            onClick={() => setExportError("")}
+            className="shrink-0 text-rose-300/70 hover:text-rose-200"
+          >
+            Закрыть
+          </button>
+        </div>
+      ) : null}
+
       <AppCard title="История snapshot-сканов" subtitle="Сравнение и экспорт по каждому запуску">
         {loading ? (
-          <div className="text-zinc-400">Загрузка...</div>
+          <SkeletonTable rows={6} cols={8} />
         ) : rows.length === 0 ? (
           <EmptyState
             title="Нет сканирований"
@@ -198,22 +213,22 @@ export default function Scans() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-zinc-800 text-left text-zinc-400">
                 <tr>
-                  <th className="px-4 py-3">Snapshot</th>
-                  <th className="px-4 py-3">Дата</th>
-                  <th className="px-4 py-3">Статус</th>
-                  <th className="px-4 py-3">Активы</th>
-                  <th className="px-4 py-3">ПО</th>
-                  <th className="px-4 py-3">Checks</th>
-                  <th className="px-4 py-3">Failed</th>
-                  <th className="px-4 py-3">Score</th>
+                  <SortableHeader label="Snapshot" sortKey="snapshot" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Дата" sortKey="date" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Статус" sortKey="status" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Активы" sortKey="assets" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="ПО" sortKey="software" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Checks" sortKey="checks" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Failed" sortKey="failed" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableHeader label="Score" sortKey="score" activeKey={activeKey} sortDir={sortDir} onSort={toggleSort} />
                   <th className="px-4 py-3">PDF</th>
                   <th className="px-4 py-3">Excel</th>
                   <th className="px-4 py-3">Сравнить</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((item, index) => {
-                  const previous = rows[index + 1] || null;
+                {sortedRows.map((item) => {
+                  const previous = previousByRow.get(item.id) || null;
                   const pdfBusy = busyKey === `${item.id}-pdf`;
                   const excelBusy = busyKey === `${item.id}-excel`;
 
@@ -296,5 +311,6 @@ export default function Scans() {
         )}
       </AppCard>
     </div>
+    </OrgGate>
   );
 }

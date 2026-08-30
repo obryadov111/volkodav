@@ -47,10 +47,10 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-2">
-        {menuItems.map(({ to, label, icon: Icon }) => (
-          <Link key={to} to={to} className={getItemClassName(to)}>
-            <Icon size={18} />
-            <span>{label}</span>
+        {menuItems.map((item) => (
+          <Link key={item.to} to={item.to} className={getItemClassName(item.to)}>
+            <item.icon size={18} />
+            <span>{item.label}</span>
           </Link>
         ))}
       </nav>

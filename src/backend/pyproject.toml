@@ -1,0 +1,23 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = [".venv", "alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI DI: Depends(...)/Query(...) как default-значение — идиоматичный паттерн, не баг.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+]
