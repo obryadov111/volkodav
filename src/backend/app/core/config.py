@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     FIRST_ADMIN_PASSWORD: str | None = None
     FIRST_ADMIN_NAME: str | None = None
 
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost,http://192.168.0.147:5173"
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost,http://192.168.0.147:5173,http://10.8.0.1:5173"
 
     @property
     def allowed_origins_list(self) -> list[str]:
