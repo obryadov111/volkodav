@@ -126,7 +126,7 @@ def add_membership(db):
 @pytest.fixture
 def auth_header(client):
     def _login(email, password="password123"):
-        resp = client.post("/auth/login", json={"email": email, "password": password})
+        resp = client.post("/api/auth/login", json={"email": email, "password": password})
         assert resp.status_code == 200, resp.text
         token = resp.json()["access_token"]
         return {"Authorization": f"Bearer {token}"}

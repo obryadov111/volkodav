@@ -1,11 +1,11 @@
 def test_ingest_requires_agent_key(client):
-    resp = client.post("/ingest", json={"environment": "prod", "asset": {"hostname": "h1"}})
+    resp = client.post("/api/ingest", json={"environment": "prod", "asset": {"hostname": "h1"}})
     assert resp.status_code == 401
 
 
 def test_ingest_rejects_unknown_key(client):
     resp = client.post(
-        "/ingest",
+        "/api/ingest",
         json={"environment": "prod", "asset": {"hostname": "h1"}},
         headers={"X-Agent-Api-Key": "yak_not-a-real-key"},
     )
@@ -29,7 +29,7 @@ def test_ingest_creates_asset_runs_checks_and_computes_score(client, make_org, m
         "scan_label": "первый прогон агента",
     }
 
-    resp = client.post("/ingest", json=payload, headers={"X-Agent-Api-Key": agent_key})
+    resp = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": agent_key})
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -46,10 +46,10 @@ def test_ingest_is_idempotent_per_hostname_within_environment(client, make_org, 
     key_for_a = make_agent_key(org_a)
 
     payload = {"environment": "prod", "asset": {"hostname": "sneaky-host"}, "facts": {}}
-    resp = client.post("/ingest", json=payload, headers={"X-Agent-Api-Key": key_for_a})
+    resp = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": key_for_a})
     assert resp.status_code == 200
 
     # повторный ingest тем же ключом/hostname обновляет тот же актив, а не создаёт дубликат
-    resp2 = client.post("/ingest", json=payload, headers={"X-Agent-Api-Key": key_for_a})
+    resp2 = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": key_for_a})
     assert resp2.status_code == 200
     assert resp2.json()["asset_id"] == resp.json()["asset_id"]
