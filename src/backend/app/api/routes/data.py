@@ -27,6 +27,28 @@ from app.schemas.data import (
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+def _require_asset_access(db: Session, current_user: User, asset_id: str) -> str | None:
+    """404 если актива нет, 403 если нет доступа к его организации. Возвращает environment_id."""
+    environment_id = db.execute(
+        text("SELECT environment_id FROM assets WHERE id = :asset_id"),
+        {"asset_id": asset_id},
+    ).scalar()
+    if environment_id is None and not db.execute(text("SELECT 1 FROM assets WHERE id = :asset_id"), {"asset_id": asset_id}).scalar():
+        raise HTTPException(status_code=404, detail="Актив не найден")
+
+    if current_user.is_superadmin:
+        return environment_id
+
+    org_id = environment_id and db.execute(
+        text("SELECT organization_id FROM environments WHERE id = :eid"),
+        {"eid": environment_id},
+    ).scalar()
+    if not org_id or not get_user_role_in_org(db, current_user, str(org_id)):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому активу")
+
+    return environment_id
+
+
 @router.get("/organizations", response_model=list[OrganizationOut])
 def get_organizations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     org_ids = get_accessible_org_ids(db, current_user)
@@ -130,13 +152,7 @@ def get_asset_details(asset_id: str, current_user: User = Depends(get_current_us
     if not row:
         raise HTTPException(status_code=404, detail="Актив не найден")
 
-    if not current_user.is_superadmin:
-        org_id = row["environment_id"] and db.execute(
-            text("SELECT organization_id FROM environments WHERE id = :eid"),
-            {"eid": row["environment_id"]},
-        ).scalar()
-        if not org_id or not get_user_role_in_org(db, current_user, str(org_id)):
-            raise HTTPException(status_code=403, detail="Нет доступа к этому активу")
+    _require_asset_access(db, current_user, asset_id)
 
     software_rows = db.execute(
         text("""
@@ -181,6 +197,131 @@ def get_scan_snapshots(current_user: User = Depends(get_current_user), db: Sessi
     if org_ids is not None:
         query = query.filter(ScanSnapshot.organization_id.in_(org_ids))
     return query.order_by(ScanSnapshot.created_at.desc()).limit(50).all()
+
+
+@router.get("/organizations/{organization_id}/environments")
+def get_environments_by_organization(organization_id: str, _: User = Depends(require_org_access), db: Session = Depends(get_db)):
+    rows = db.execute(
+        text("""
+            SELECT e.id, e.organization_id, e.name,
+                   COALESCE((SELECT COUNT(*) FROM assets a WHERE a.environment_id = e.id), 0) AS assets_count
+            FROM environments e
+            WHERE e.organization_id = :org_id
+            ORDER BY e.name ASC
+        """),
+        {"org_id": organization_id},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+_SOFTWARE_SELECT = """
+    SELECT
+        s.id, s.name, s.version, s.vendor, s.category, s.type, s.created_at,
+        a.id AS asset_id, a.hostname AS asset_hostname, a.os AS asset_os
+    FROM software s
+    JOIN assets a ON a.id = s.asset_id
+    JOIN environments e ON e.id = a.environment_id
+"""
+
+
+def _software_row_to_dict(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "version": row["version"],
+        "vendor": row["vendor"],
+        "category": row["category"],
+        "type": row["type"],
+        "created_at": row["created_at"],
+        "asset": {"id": row["asset_id"], "hostname": row["asset_hostname"], "os": row["asset_os"]},
+    }
+
+
+@router.get("/organizations/{organization_id}/software")
+def get_software_by_organization(organization_id: str, _: User = Depends(require_org_access), db: Session = Depends(get_db)):
+    rows = db.execute(
+        text(_SOFTWARE_SELECT + " WHERE e.organization_id = :org_id ORDER BY s.name ASC"),
+        {"org_id": organization_id},
+    ).mappings().all()
+    return [_software_row_to_dict(row) for row in rows]
+
+
+@router.get("/assets/{asset_id}/software")
+def get_software_by_asset(asset_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_asset_access(db, current_user, asset_id)
+    rows = db.execute(
+        text(_SOFTWARE_SELECT + " WHERE a.id = :asset_id ORDER BY s.name ASC"),
+        {"asset_id": asset_id},
+    ).mappings().all()
+    return [_software_row_to_dict(row) for row in rows]
+
+
+_HARDENING_SELECT = """
+    SELECT
+        hc.id, hc.actual_value, hc.expected_value, hc.status, hc.checked_at,
+        a.id AS asset_id, a.hostname AS asset_hostname,
+        r.id AS rule_id, r.title AS rule_title, r.rule_code, r.severity, r.expected_value AS rule_expected_value
+    FROM hardening_checks hc
+    JOIN assets a ON a.id = hc.asset_id
+    JOIN environments e ON e.id = a.environment_id
+    LEFT JOIN hardening_rules r ON r.id = hc.rule_id
+"""
+
+
+def _hardening_row_to_dict(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "actual_value": row["actual_value"],
+        "expected_value": row["expected_value"] or row["rule_expected_value"],
+        "status": row["status"],
+        "checked_at": row["checked_at"],
+        "asset": {"id": row["asset_id"], "hostname": row["asset_hostname"]},
+        "rule": {
+            "id": row["rule_id"],
+            "title": row["rule_title"],
+            "rule_code": row["rule_code"],
+            "severity": row["severity"],
+        },
+    }
+
+
+@router.get("/organizations/{organization_id}/hardening")
+def get_hardening_by_organization(organization_id: str, _: User = Depends(require_org_access), db: Session = Depends(get_db)):
+    rows = db.execute(
+        text(_HARDENING_SELECT + " WHERE e.organization_id = :org_id ORDER BY hc.checked_at DESC NULLS LAST"),
+        {"org_id": organization_id},
+    ).mappings().all()
+    return [_hardening_row_to_dict(row) for row in rows]
+
+
+@router.get("/assets/{asset_id}/hardening")
+def get_hardening_by_asset(asset_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_asset_access(db, current_user, asset_id)
+    rows = db.execute(
+        text(_HARDENING_SELECT + " WHERE a.id = :asset_id ORDER BY hc.checked_at DESC NULLS LAST"),
+        {"asset_id": asset_id},
+    ).mappings().all()
+    return [_hardening_row_to_dict(row) for row in rows]
+
+
+@router.get("/organizations/{organization_id}/snapshots", response_model=list[ScanSnapshotOut])
+def get_snapshots_by_organization(organization_id: str, _: User = Depends(require_org_access), db: Session = Depends(get_db)):
+    query = db.query(ScanSnapshot).filter(ScanSnapshot.organization_id == organization_id)
+    return query.order_by(ScanSnapshot.scan_number.desc()).all()
+
+
+@router.get("/organizations/{organization_id}/reports")
+def get_reports_by_organization(organization_id: str, _: User = Depends(require_org_access), db: Session = Depends(get_db)):
+    rows = db.execute(
+        text("""
+            SELECT id, organization_id, total_checks, passed, failed, compliance_score, generated_at
+            FROM hardening_reports
+            WHERE organization_id = :org_id
+            ORDER BY generated_at DESC
+        """),
+        {"org_id": organization_id},
+    ).mappings().all()
+    return [dict(row) for row in rows]
 
 
 @router.get("/organizations/{organization_id}/dashboard", response_model=DashboardSummaryOut)
