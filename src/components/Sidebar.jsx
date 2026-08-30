@@ -40,7 +40,7 @@ export default function Sidebar() {
   return (
     <aside className="w-72 shrink-0 border-r border-zinc-800 bg-zinc-950/80 p-4">
       <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-        <div className="text-lg font-semibold tracking-wide text-white">Yakilka</div>
+        <div className="text-lg font-semibold tracking-wide text-white">Харденинг</div>
         <div className="mt-1 text-xs text-zinc-400">
           Hardening / Compliance UI
         </div>

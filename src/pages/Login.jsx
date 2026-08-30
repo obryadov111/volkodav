@@ -86,7 +86,7 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-        <h1 className="text-3xl font-bold mb-2">Yakilka</h1>
+        <h1 className="text-3xl font-bold mb-2">Харденинг</h1>
         <p className="text-zinc-400 mb-6">Система автоматизации харденинга</p>
 
         {error && (
@@ -104,7 +104,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-white outline-none ring-1 ring-zinc-800 focus:ring-blue-500"
-                placeholder="admin@yakilka.local"
+                placeholder="admin@hardening.local"
                 autoComplete="username"
               />
             </div>
