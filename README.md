@@ -4,6 +4,8 @@
 
 **Харденинг** — это система для автоматизированного сбора, анализа и контроля соответствия конфигураций ИТ-инфраструктуры требованиям информационной безопасности (харденинга).
 
+Пайплайн работает end-to-end: агент-сборщик снимает факты с хоста → `POST /api/ingest` → движок сравнения сверяет их с `hardening_rules` (набор на основе CIS Benchmark) → результат пишется в БД и пересчитывает `compliance_score` → фронтенд показывает его через защищённый JWT-авторизацией и RBAC по организациям API.
+
 Система предназначена для:
 
 * проведения аудита ИБ
@@ -105,65 +107,95 @@
 * React (Vite)
 * TailwindCSS
 * React Router
+* все страницы ходят в реальный API (`src/api/*.js`), заглушек не осталось
 
-### Backend (планируется)
+### Backend
 
-* API для сбора и обработки данных
-* работа с БД
-* логика анализа
+* FastAPI (`src/backend/app`)
+* PostgreSQL + SQLAlchemy, схема версионируется через Alembic (`src/backend/alembic`)
+* JWT-авторизация + опциональная 2FA (TOTP)
+* RBAC по организациям через `user_organizations` — все ручки данных закрыты `Depends(get_current_user)` / `require_org_access()`, роль пользователя не хардкодится
+* движок сравнения «факт vs политика» (`app/services/hardening_engine.py`) и приём данных от агента (`POST /api/ingest`, аутентификация по ключу агента в заголовке `X-Agent-Api-Key`)
+* 28 автотестов на pytest (auth, RBAC, ingest, движок сравнения, изоляция данных по организациям) + GitHub Actions прогоняет их на каждый push/PR (`.github/workflows/backend-tests.yml`)
 
-### Агенты (планируется)
+### Агент-сборщик
 
-* скрипты сбора конфигураций
-* отправка данных в систему
+* `agent/collector.py` — Python-скрипт без внешних зависимостей, запускается на целевом Linux-хосте
+* собирает `sshd_config`, состояние firewall (ufw), автообновления, парольную политику, `sysctl net.ipv4.ip_forward`, привилегированность Docker-контейнеров и список установленного ПО
+* отправляет собранное в `/api/ingest`; подробности — [`agent/README.md`](agent/README.md)
 
 ---
 
 ## 📁 Структура проекта
 
 ```text
+agent/               # агент-сборщик (запускается на целевом хосте)
 src/
- ├── components/     # UI компоненты
- ├── pages/          # страницы приложения
- ├── App.jsx         # роутинг
- └── main.jsx        # входная точка
+ ├── api/             # клиенты к backend API
+ ├── components/      # UI-компоненты
+ ├── pages/           # страницы приложения
+ ├── backend/          # FastAPI-бэкенд (app/, alembic/, tests/)
+ ├── App.jsx          # роутинг
+ └── main.jsx         # входная точка
 ```
 
 ---
 
 ## 🚀 Запуск проекта
 
-### 1. Установка
+### Frontend
 
 ```bash
 npm install
+npm run dev
 ```
 
-### 2. Запуск
+### Backend
 
 ```bash
-npm run dev
+cd src/backend
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+### Тесты backend
+
+```bash
+cd src/backend
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+### Агент
+
+```bash
+python3 agent/collector.py --api-url http://localhost:8000 --environment prod
 ```
 
 ---
 
 ## 📌 Пример проверки
 
+Реальный результат прогона агента (`agent/collector.py`) против тестового хоста:
+
 ```text
-Параметр: SSH Root Login
+Правило: ssh.password_authentication (High)
 
-Текущее:
-PermitRootLogin yes
+Собранное агентом значение:
+password_authentication yes
 
-Требуемое:
-PermitRootLogin no
+Требуемое политикой:
+password_authentication no
 
 Результат:
-✖ Не соответствует
+✖ fail
 
 Рекомендация:
-Отключить вход root по SSH
+В sshd_config установить PasswordAuthentication no.
 ```
+
+Итог по хосту в этом прогоне: 14 правил, 5 pass / 7 fail / 2 error (нет данных для сравнения), `compliance_score = 41.67%`.
 
 ---
 
@@ -180,11 +212,10 @@ PermitRootLogin no
 
 ## 📈 Перспективы развития
 
-* интеграция с реальными агентами
+* Windows-агент (сейчас поддерживается только Linux — sshd/ufw/apt/pam)
 * автоматическое исправление конфигураций
 * генерация PDF-отчётов
-* система ролей (аудитор / заказчик)
-* поддержка стандартов (CIS, ISO 27001)
+* более широкий набор правил поверх стартового CIS-набора
 
 ---
 
