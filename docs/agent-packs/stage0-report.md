@@ -4,11 +4,11 @@
 
 > [!NOTE]
 > **Где код**
-> Репозиторий `volkodav`, ветка **`feature/stage0-pack-foundation`** (один коммит `2ce8c6a` поверх `main`, 29 файлов, +2531 / −27). В `main` **не влито**, на живой БД миграция **не применялась**, бэкенд **не пересобирался**.
+> Репозиторий `volkodav`, ветка **`feature/stage0-pack-foundation`** (один коммит `2ce8c6a` поверх `main`, 29 файлов, +2531 / −27). **Влито в `main`** (PR #1, merge-коммит `1b57213`, 2026-09-20; CI на `main` зелёный). На живой БД миграция **не применялась**, бэкенд **не пересобирался**.
 >
 > Копия этого отчёта и связанных проектных документов лежит **рядом с кодом**: `volkodav/docs/agent-packs/` (та же ветка).
 >
-> **Pull Request:** [#1](https://github.com/obryadov111/volkodav/pull/1) · **Issues по этапам:** [#2](https://github.com/obryadov111/volkodav/issues/2), [#3](https://github.com/obryadov111/volkodav/issues/3), [#4](https://github.com/obryadov111/volkodav/issues/4), [#5](https://github.com/obryadov111/volkodav/issues/5), [#6](https://github.com/obryadov111/volkodav/issues/6). Слияние в `main` — после ревью; пока код и документы видны только в ветке.
+> **Pull Request:** [#1](https://github.com/obryadov111/volkodav/pull/1) · **Issues по этапам:** [#2](https://github.com/obryadov111/volkodav/issues/2), [#3](https://github.com/obryadov111/volkodav/issues/3), [#4](https://github.com/obryadov111/volkodav/issues/4), [#5](https://github.com/obryadov111/volkodav/issues/5), [#6](https://github.com/obryadov111/volkodav/issues/6). PR влит в `main`.
 
 ## 0 · Итог в цифрах
 
@@ -328,9 +328,9 @@ CI: добавлен `.github/workflows/agent-tests.yml` (тесты агент�
 
 ## 9 · Развёртывание — что нужно сделать человеку
 
-Ничего из этого не выполнено, потому что затрагивает живую систему:
+Кроме слияния (п. 1), ничего из этого не выполнено, потому что затрагивает живую систему:
 
-1. **Ревью и слияние** ветки `feature/stage0-pack-foundation` в `main`.
+1. ✅ **Слияние** ветки `feature/stage0-pack-foundation` в `main` — выполнено (PR #1, `1b57213`).
 2. **Резервная копия и миграция живой БД**: `alembic upgrade head` (добавляет только `nullable`-колонки, старые данные не меняются; откат — `alembic downgrade -1`).
 3. **Сгенерировать `PACK_SIGNING_KEY`** (`python -c "import secrets; print(secrets.token_urlsafe(48))"`) и прописать в `.env` бэкенда. Тот же ключ агент получает как `HARDENING_PACK_KEY` (хранить с правами `600`, отдельно от ключа агента).
 4. **Пересобрать и перезапустить бэкенд** (`deploy/restart_backend.sh`). До этого шага и без `PACK_SIGNING_KEY` всё работает по-старому, `/api/agent/manifests` отвечает `503`.
