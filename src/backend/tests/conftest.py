@@ -4,6 +4,7 @@ import uuid
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/app_test_db")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
 os.environ.setdefault("TOTP_SECRET_ENCRYPTION_KEY", "test-totp-encryption-key")
+os.environ.setdefault("PACK_SIGNING_KEY", "test-pack-signing-key")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -1,4 +1,6 @@
 from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import Path
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,6 +12,7 @@ from app.core.config import settings
 from app.core.security import hash_agent_api_key
 from app.db.session import SessionLocal
 from app.models.user import User
+from app.services.packs.registry import PackRegistry, load_registry
 
 bearer_scheme = HTTPBearer()
 
@@ -20,6 +23,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@lru_cache
+def _load_default_registry() -> PackRegistry:
+    directory = Path(settings.PACKS_DIR) if settings.PACKS_DIR else Path(__file__).resolve().parents[1] / "packs"
+    return load_registry(directory)
+
+
+def get_pack_registry() -> PackRegistry:
+    """Реестр паков, загруженный один раз при первом обращении. Битый пак роняет запрос явной
+    ошибкой с именем файла, а не молча пропускается (иначе платформа «тихо» осталась бы без проверок)."""
+    return _load_default_registry()
 
 
 def get_current_user(

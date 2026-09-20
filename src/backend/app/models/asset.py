@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -21,4 +21,5 @@ class Asset(Base):
     os: Mapped[str | None] = mapped_column(Text, nullable=True)
     asset_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     criticality: Mapped[str | None] = mapped_column(Text, nullable=True)
+    platform_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

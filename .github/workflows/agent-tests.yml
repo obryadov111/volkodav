@@ -1,0 +1,29 @@
+name: Agent tests
+
+on:
+  push:
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-tests.yml"
+  pull_request:
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Агент не имеет зависимостей — pytest нужен только для тестов.
+      - name: Install pytest
+        run: pip install pytest==8.3.5
+
+      - name: Run pytest
+        run: pytest agent/tests -v

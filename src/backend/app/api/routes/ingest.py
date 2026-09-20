@@ -1,10 +1,10 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_agent_organization_id, get_db
+from app.api.deps import get_agent_organization_id, get_db, get_pack_registry
 from app.models.asset import Asset
 from app.models.environment import Environment
 from app.models.hardening import (
@@ -17,8 +17,10 @@ from app.models.hardening import (
 )
 from app.models.scan_snapshot import ScanSnapshot
 from app.models.software import Software
-from app.schemas.ingest import IngestChecksSummary, IngestRequest, IngestResponse
-from app.services.hardening_engine import compute_compliance_score, evaluate_asset
+from app.schemas.ingest import IngestChecksSummary, IngestCoverage, IngestRequest, IngestResponse
+from app.services.hardening_engine import compute_compliance_score, compute_coverage, evaluate_asset
+from app.services.packs.evaluate import evaluate_pack
+from app.services.packs.registry import PackRegistry
 
 router = APIRouter(tags=["ingest"])
 
@@ -37,7 +39,7 @@ def _get_or_create_environment(db: Session, organization_id: str, name: str) -> 
     return env
 
 
-def _get_or_create_asset(db: Session, environment_id: str, payload) -> Asset:
+def _get_or_create_asset(db: Session, environment_id: str, payload, platform_tags: list[str]) -> Asset:
     asset = (
         db.query(Asset)
         .filter(Asset.environment_id == environment_id, Asset.hostname == payload.hostname)
@@ -48,6 +50,8 @@ def _get_or_create_asset(db: Session, environment_id: str, payload) -> Asset:
         asset.os = payload.os
         asset.asset_type = payload.asset_type
         asset.criticality = payload.criticality
+        if platform_tags:
+            asset.platform_tags = platform_tags
     else:
         asset = Asset(
             environment_id=environment_id,
@@ -56,6 +60,7 @@ def _get_or_create_asset(db: Session, environment_id: str, payload) -> Asset:
             os=payload.os,
             asset_type=payload.asset_type,
             criticality=payload.criticality,
+            platform_tags=platform_tags or None,
         )
         db.add(asset)
     db.flush()
@@ -67,6 +72,7 @@ def ingest(
     payload: IngestRequest,
     organization_id: str = Depends(get_agent_organization_id),
     db: Session = Depends(get_db),
+    registry: PackRegistry = Depends(get_pack_registry),
 ):
     """Приём данных от агента-сборщика: активы, ПО, сырые факты конфигурации.
     Прогоняет факты через движок сравнения (evaluate_asset) против hardening_rules,
@@ -75,12 +81,21 @@ def ingest(
     """
     now = datetime.now(UTC)
 
+    pack = None
+    if payload.pack:
+        pack = registry.get(payload.pack.id, payload.pack.version)
+        if pack is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Неизвестный пак {payload.pack.id} версии {payload.pack.version}",
+            )
+
     batch = IngestionBatch(organization_id=organization_id, received_at=now, source="agent", status="processing")
     db.add(batch)
     db.flush()
 
     environment = _get_or_create_environment(db, organization_id, payload.environment)
-    asset = _get_or_create_asset(db, str(environment.id), payload.asset)
+    asset = _get_or_create_asset(db, str(environment.id), payload.asset, payload.platform_tags)
 
     db.query(Software).filter(Software.asset_id == asset.id).delete()
     for item in payload.software:
@@ -95,10 +110,24 @@ def ingest(
             )
         )
 
-    db.add(AgentCollection(asset_id=asset.id, batch_id=batch.id, collected_data=payload.facts, collected_at=now))
+    collected_data = payload.facts
+    if pack:
+        # Сырые результаты проб — чтобы результат можно было перепрогнать по новой версии правил.
+        collected_data = {
+            "facts": payload.facts,
+            "pack": payload.pack.model_dump(),
+            "probe_results": {k: v.model_dump() for k, v in payload.probe_results.items()},
+        }
+    db.add(AgentCollection(asset_id=asset.id, batch_id=batch.id, collected_data=collected_data, collected_at=now))
 
-    rules = db.query(HardeningRule).all()
-    results = evaluate_asset(payload.facts, rules, asset.asset_type)
+    results = []
+    # Агент на паках присылает probe_results, а не facts: старые правила против пустых facts
+    # дали бы ложные error по каждому правилу, поэтому без facts они не запускаются.
+    if payload.facts or pack is None:
+        rules = db.query(HardeningRule).all()
+        results.extend(evaluate_asset(payload.facts, rules, asset.asset_type, payload.platform_tags))
+    if pack:
+        results.extend(evaluate_pack(pack, payload.probe_results))
     score, total, passed, failed = compute_compliance_score(results)
     errors = total - passed - failed
 
@@ -112,6 +141,9 @@ def ingest(
                 expected_value=r.expected_value,
                 status=r.status,
                 checked_at=now,
+                check_id=r.check_id,
+                pack_id=r.pack_id,
+                pack_version=r.pack_version,
             )
         )
 
@@ -152,6 +184,10 @@ def ingest(
                 expected_value=r.expected_value,
                 status=r.status,
                 checked_at=now,
+                check_id=r.check_id,
+                pack_id=r.pack_id,
+                pack_version=r.pack_version,
+                evidence=r.evidence,
             )
         )
 
@@ -204,5 +240,6 @@ def ingest(
         snapshot_id=str(snapshot.id),
         checks=IngestChecksSummary(total=total, passed=passed, failed=failed, errors=errors),
         compliance_score=score,
+        coverage=IngestCoverage(**compute_coverage(results)),
         report_id=str(report.id),
     )
