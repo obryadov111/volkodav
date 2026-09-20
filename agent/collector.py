@@ -339,15 +339,20 @@ def build_pack_payload(args: argparse.Namespace, probes_module) -> dict:
     matched = probes_module.select_manifests(transport, manifests)
     if not matched:
         raise SystemExit("Платформа не распознана ни одним паком — данные не отправлены (агент не гадает)")
-    if len(matched) > 1:
-        names = ", ".join(m["pack"] for m in matched)
-        raise SystemExit(f"Платформе подходит несколько паков ({names}) — укажите нужный через --pack")
-    manifest = matched[0]
 
     def log(entry: dict) -> None:
         print(json.dumps(entry, ensure_ascii=False), file=sys.stderr)
 
-    probe_results = probes_module.run_manifest(transport, manifest, log=log)
+    # Хосту может подходить несколько паков сразу (ОС + Docker + СУБД): выполняются все подошедшие
+    # и уходят одним запросом — один прогон, один снимок, общая оценка.
+    runs, tags, asset_type = [], [], None
+    for manifest in matched:
+        runs.append({
+            "id": manifest["pack"], "version": manifest["version"],
+            "probe_results": probes_module.run_manifest(transport, manifest, log=log),
+        })
+        tags.extend(tag for tag in manifest["tags"] if tag not in tags)
+        asset_type = asset_type or manifest.get("asset_type")
     local = transport.name == "local"
     return {
         "environment": args.environment,
@@ -355,13 +360,12 @@ def build_pack_payload(args: argparse.Namespace, probes_module) -> dict:
             "hostname": args.hostname or args.ssh_host or socket.gethostname(),
             "ip_address": args.ip_address or (get_primary_ip() if local else None),
             "os": get_os_pretty_name() if local else None,
-            "asset_type": manifest.get("asset_type") or args.asset_type,
+            "asset_type": asset_type or args.asset_type,
             "criticality": args.criticality,
         },
         "software": collect_software() if local else [],
-        "platform_tags": manifest["tags"],
-        "pack": {"id": manifest["pack"], "version": manifest["version"]},
-        "probe_results": probe_results,
+        "platform_tags": tags,
+        "packs": runs,
         "scan_label": args.scan_label,
     }
 
@@ -380,7 +384,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     packs = parser.add_argument_group("режим паков", "Подписанные манифесты с сервера; нужен probes.py рядом со скриптом")
     packs.add_argument("--use-packs", action="store_true", help="Собирать по манифестам паков вместо встроенных проверок")
     packs.add_argument("--pack-key", default=os.environ.get("HARDENING_PACK_KEY"), help="Ключ проверки подписи манифестов (или HARDENING_PACK_KEY)")
-    packs.add_argument("--pack", default=None, help="Ограничить выбор одним паком (id), если подходит несколько")
+    packs.add_argument("--pack", default=None, help="Выполнить только указанный пак (id) из подошедших платформе")
     packs.add_argument("--manifests-file", default=None, help="Взять манифесты из файла (JSON ответа /api/agent/manifests) вместо сервера")
     packs.add_argument("--ssh-host", default=None, help="Внешний сбор с сетевого устройства по SSH (вместо локального хоста)")
     packs.add_argument("--ssh-user", default=None, help="Пользователь SSH (учётка только на чтение)")

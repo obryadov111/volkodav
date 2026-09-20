@@ -32,7 +32,9 @@ CLI_READONLY_RE = re.compile(
 )
 
 Severity = Literal["critical", "high", "medium", "low", "info"]
-Maturity = Literal["inventory", "baseline", "full", "certified"]
+# inventory — только обнаружение платформы; draft — проверки написаны по документации и НЕ подтверждены на
+# реальном оборудовании; baseline и выше — подтверждены (обязателен verified_on: на чём именно проверено).
+Maturity = Literal["inventory", "draft", "baseline", "full", "certified"]
 Transport = Literal["local", "ssh"]
 
 
@@ -90,6 +92,28 @@ class FileStatProbe(StrictModel):
     _path = field_validator("path")(_validate_absolute_path)
 
 
+class CmdForeachProbe(StrictModel):
+    """Команда-список, затем команда по каждому элементу; результат — число элементов, вывод которых
+    подходит под pattern (например, docker: id контейнеров -> privileged каждого). Пустой список — 0."""
+
+    type: Literal["cmd_foreach"]
+    list_cmd: list[str] = Field(min_length=1)
+    item_cmd: list[str] = Field(min_length=1)  # элемент списка добавляется последним аргументом
+    pattern: str
+    max_items: int = Field(default=100, ge=1, le=200)
+
+    _pattern = field_validator("pattern")(_validate_regex)
+
+    @field_validator("list_cmd", "item_cmd")
+    @classmethod
+    def _argv(cls, cmd: list[str]) -> list[str]:
+        if not EXECUTABLE_RE.match(cmd[0]):
+            raise ValueError(f"исполняемый файл указывается по имени, без пути: {cmd[0]!r}")
+        if any(("\n" in arg or "\x00" in arg) for arg in cmd):
+            raise ValueError("аргументы команды не могут содержать перевод строки")
+        return cmd
+
+
 class CmdRegexProbe(StrictModel):
     """Вывод локальной команды (без shell, argv) и регулярное выражение по нему."""
 
@@ -116,8 +140,14 @@ class CliConfigProbe(StrictModel):
     cmd: str
     match: str
     section: str | None = None
+    require: str | None = None  # признак настоящего вывода; нет в ответе — проба не выполнилась (нет прав и т. п.)
 
     _match = field_validator("match")(_validate_regex)
+
+    @field_validator("require")
+    @classmethod
+    def _require_regex(cls, require: str | None) -> str | None:
+        return _validate_regex(require) if require is not None else None
 
     @field_validator("cmd")
     @classmethod
@@ -162,7 +192,8 @@ class PkgVersionProbe(StrictModel):
 
 
 LeafProbe = (
-    FileKvProbe | FileRegexProbe | FileStatProbe | CmdRegexProbe | CliConfigProbe | ServiceStateProbe | PkgVersionProbe
+    FileKvProbe | FileRegexProbe | FileStatProbe | CmdRegexProbe | CmdForeachProbe | CliConfigProbe | ServiceStateProbe
+    | PkgVersionProbe
 )
 
 
@@ -284,8 +315,13 @@ class Pack(StrictModel):
 
         if self.maturity != "inventory" and not self.checks:
             raise ValueError(f"maturity={self.maturity} требует проверок; пустой пак — только inventory")
-        if self.maturity in ("full", "certified") and not self.verified_on:
-            raise ValueError(f"maturity={self.maturity} требует verified_on (версии, на которых проверено)")
+        if self.maturity in ("baseline", "full", "certified") and not self.verified_on:
+            raise ValueError(
+                f"maturity={self.maturity} требует verified_on (на каком оборудовании/версиях проверено); "
+                "проверки, не подтверждённые на оборудовании, — maturity=draft"
+            )
+        if self.maturity == "inventory" and self.checks:
+            raise ValueError("maturity=inventory — только обнаружение платформы, без проверок (проверки — draft или выше)")
 
         if self.transport == "ssh":
             probes = [

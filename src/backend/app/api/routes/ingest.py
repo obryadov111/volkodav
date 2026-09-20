@@ -17,7 +17,14 @@ from app.models.hardening import (
 )
 from app.models.scan_snapshot import ScanSnapshot
 from app.models.software import Software
-from app.schemas.ingest import IngestChecksSummary, IngestCoverage, IngestRequest, IngestResponse
+from app.schemas.ingest import (
+    IngestChecksSummary,
+    IngestCoverage,
+    IngestPackRun,
+    IngestPackSummary,
+    IngestRequest,
+    IngestResponse,
+)
 from app.services.hardening_engine import compute_compliance_score, compute_coverage, evaluate_asset
 from app.services.packs.evaluate import evaluate_pack
 from app.services.packs.registry import PackRegistry
@@ -67,6 +74,21 @@ def _get_or_create_asset(db: Session, environment_id: str, payload, platform_tag
     return asset
 
 
+def _pack_runs(payload: IngestRequest) -> list[IngestPackRun]:
+    """Все паки прогона: одиночный `pack` + `probe_results` (прежний формат) и/или список `packs`."""
+    runs = list(payload.packs)
+    if payload.pack:
+        runs.insert(0, IngestPackRun(id=payload.pack.id, version=payload.pack.version, probe_results=payload.probe_results))
+    ids = [run.id for run in runs]
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Пак указан больше одного раза: {', '.join(duplicates)}",
+        )
+    return runs
+
+
 @router.post("/ingest", response_model=IngestResponse)
 def ingest(
     payload: IngestRequest,
@@ -81,14 +103,16 @@ def ingest(
     """
     now = datetime.now(UTC)
 
-    pack = None
-    if payload.pack:
-        pack = registry.get(payload.pack.id, payload.pack.version)
+    # Все паки разрешаются до записи в БД: неизвестный пак — 422 без побочных записей.
+    resolved = []
+    for run in _pack_runs(payload):
+        pack = registry.get(run.id, run.version)
         if pack is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Неизвестный пак {payload.pack.id} версии {payload.pack.version}",
+                detail=f"Неизвестный пак {run.id} версии {run.version}",
             )
+        resolved.append((pack, run))
 
     batch = IngestionBatch(organization_id=organization_id, received_at=now, source="agent", status="processing")
     db.add(batch)
@@ -111,23 +135,40 @@ def ingest(
         )
 
     collected_data = payload.facts
-    if pack:
+    if resolved:
         # Сырые результаты проб — чтобы результат можно было перепрогнать по новой версии правил.
         collected_data = {
             "facts": payload.facts,
-            "pack": payload.pack.model_dump(),
-            "probe_results": {k: v.model_dump() for k, v in payload.probe_results.items()},
+            "packs": [
+                {
+                    "id": run.id,
+                    "version": run.version,
+                    "probe_results": {k: v.model_dump() for k, v in run.probe_results.items()},
+                }
+                for _, run in resolved
+            ],
         }
     db.add(AgentCollection(asset_id=asset.id, batch_id=batch.id, collected_data=collected_data, collected_at=now))
 
     results = []
     # Агент на паках присылает probe_results, а не facts: старые правила против пустых facts
     # дали бы ложные error по каждому правилу, поэтому без facts они не запускаются.
-    if payload.facts or pack is None:
+    if payload.facts or not resolved:
         rules = db.query(HardeningRule).all()
         results.extend(evaluate_asset(payload.facts, rules, asset.asset_type, payload.platform_tags))
-    if pack:
-        results.extend(evaluate_pack(pack, payload.probe_results))
+    pack_summaries = []
+    for pack, run in resolved:
+        pack_results = evaluate_pack(pack, run.probe_results)
+        results.extend(pack_results)
+        pack_summaries.append(
+            IngestPackSummary(
+                id=pack.pack, version=pack.version, maturity=pack.maturity,
+                total=len(pack_results),
+                passed=sum(1 for r in pack_results if r.status == "pass"),
+                failed=sum(1 for r in pack_results if r.status == "fail"),
+                errors=sum(1 for r in pack_results if r.status == "error"),
+            )
+        )
     score, total, passed, failed = compute_compliance_score(results)
     errors = total - passed - failed
 
@@ -248,5 +289,6 @@ def ingest(
         checks=IngestChecksSummary(total=total, passed=passed, failed=failed, errors=errors),
         compliance_score=score,
         coverage=IngestCoverage(**compute_coverage(results)),
+        packs=pack_summaries,
         report_id=str(report.id),
     )

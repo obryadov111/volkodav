@@ -15,6 +15,7 @@ BASE_PACK = {
     "pack": "ubuntu-test",
     "version": "1.0.0",
     "maturity": "baseline",
+    "verified_on": ["Ubuntu 24.04 (тестовый стенд)"],
     "tags": ["linux-server", "debian-family", "ubuntu"],
     "transport": "local",
     "asset_type": "linux-server",
@@ -62,7 +63,9 @@ def test_valid_pack_loads():
     [
         (lambda d: d["checks"].append(copy.deepcopy(d["checks"][0])), "повторяются id"),
         (lambda d: d.update(checks=[]), "требует проверок"),
-        (lambda d: d.update(maturity="full"), "verified_on"),
+        (lambda d: d.update(maturity="full", verified_on=[]), "verified_on"),
+        (lambda d: d.update(maturity="baseline", verified_on=[]), "verified_on"),
+        (lambda d: d.update(maturity="inventory"), "только обнаружение"),
         (lambda d: d.update(version="1.0"), "MAJOR.MINOR.PATCH"),
         (lambda d: d.update(pack="Ubuntu_Test"), "id пака"),
         (lambda d: d.update(tags=[]), "at least 1"),
@@ -384,3 +387,70 @@ def test_default_registry_ships_ubuntu_server_pack():
     assert pack is not None and pack.maturity == "baseline" and pack.transport == "local"
     assert len(pack.checks) == 12
     assert "ubuntu" in pack.tags and "linux-server" in pack.tags
+
+
+# ---------- этап 2: cmd_foreach, require, уровни зрелости ----------
+
+FOREACH_PROBE = {
+    "type": "cmd_foreach", "list_cmd": ["docker", "ps", "-q"],
+    "item_cmd": ["docker", "inspect", "--format", "{{.HostConfig.Privileged}}"], "pattern": "^true$",
+}
+
+
+def _foreach_pack(probe, **overrides):
+    return make_pack(checks=[{"id": "docker.x", "title": "x", "probe": probe, "assert": {"op": "eq", "value": 0}}], **overrides)
+
+
+def test_cmd_foreach_is_valid_and_reaches_the_manifest():
+    pack = Pack.model_validate(_foreach_pack(FOREACH_PROBE))
+    probe = build_manifest(pack)["checks"][0]["probe"]
+    assert probe["type"] == "cmd_foreach" and probe["max_items"] == 100 and probe["list_cmd"] == ["docker", "ps", "-q"]
+
+
+@pytest.mark.parametrize(
+    "mutation, message",
+    [
+        ({"list_cmd": ["/usr/bin/docker", "ps"]}, "без пути"),
+        ({"item_cmd": ["sh", "-c\nid"]}, "перевод строки"),
+        ({"max_items": 0}, "greater than or equal to 1"),
+        ({"max_items": 500}, "less than or equal to 200"),
+        ({"pattern": "(unclosed"}, "регулярное выражение"),
+        ({"list_cmd": []}, "at least 1"),
+    ],
+)
+def test_invalid_cmd_foreach_is_rejected(mutation, message):
+    with pytest.raises(ValueError, match=message):
+        Pack.model_validate(_foreach_pack({**FOREACH_PROBE, **mutation}))
+
+
+def test_ssh_transport_rejects_cmd_foreach():
+    cli = {"type": "cli_config", "cmd": "show version", "match": "x"}
+    data = _foreach_pack(FOREACH_PROBE, transport="ssh", detect=[{"probe": cli, "equals": "x"}])
+    with pytest.raises(ValueError, match="транспорт ssh допускает только"):
+        Pack.model_validate(data)
+
+
+def test_cli_config_require_must_be_a_valid_regex():
+    probe = {"type": "cli_config", "cmd": "show running-config", "match": "x", "require": "(unclosed"}
+    data = make_pack(transport="ssh", detect=[{"probe": {"type": "cli_config", "cmd": "show version", "match": "x"}, "equals": "x"}],
+                     checks=[{"id": "n.x", "title": "x", "probe": probe, "assert": {"op": "exists"}}])
+    with pytest.raises(ValueError, match="регулярное выражение"):
+        Pack.model_validate(data)
+
+
+def test_draft_pack_may_have_checks_without_verified_on_but_baseline_may_not():
+    assert Pack.model_validate(make_pack(maturity="draft", verified_on=[])).maturity == "draft"
+    with pytest.raises(ValueError, match="verified_on"):
+        Pack.model_validate(make_pack(maturity="baseline", verified_on=[]))
+
+
+def test_shipped_packs_and_their_maturity():
+    from app.api.deps import get_pack_registry
+
+    packs = {p.pack: p for p in get_pack_registry().latest()}
+
+    assert {name: p.maturity for name, p in packs.items()} == {
+        "ubuntu-server": "baseline", "docker": "baseline", "cisco-ios": "draft", "astra-linux": "inventory",
+    }
+    assert packs["astra-linux"].checks == [] and packs["cisco-ios"].verified_on == []
+    assert all(p.verified_on for p in packs.values() if p.maturity == "baseline")  # baseline = подтверждено на оборудовании

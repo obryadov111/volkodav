@@ -97,6 +97,8 @@ LOCAL_COMMAND_POLICY = {
     "aa-status": re.compile(r"^--enabled$"),
     "timedatectl": re.compile(r"^show( -p [A-Za-z]+)?( --value)?$"),
     "ss": re.compile(r"^-[tuln]+p?$"),
+    # только список запущенных контейнеров и один поле inspect по конкретному id; run/exec/rm и т.п. — отказ
+    "docker": re.compile(r"^(ps -q|inspect --format \{\{\.HostConfig\.Privileged\}\} [a-f0-9]{6,64})$"),
 }
 
 CLI_FILTERS = ("include", "exclude", "begin", "section", "count", "match", "except")
@@ -331,8 +333,40 @@ def probe_cmd_regex(t, p: dict) -> dict:
     return _ok(value, matched)
 
 
+def probe_cmd_foreach(t, p: dict) -> dict:
+    """Команда-список, затем команда по каждому элементу; значение — число элементов, вывод которых
+    подходит под pattern. Каждый вызов проходит белый список отдельно (id контейнера — тоже аргумент
+    под проверкой, а не подстановка в строку). Ошибка любой из команд — проба не выполнилась, а не «0»:
+    иначе недоступный docker выглядел бы как «привилегированных контейнеров нет»."""
+    listing = t.run(p["list_cmd"])
+    if listing.code != 0:
+        raise ProbeError(f"{p['list_cmd'][0]} завершилась с кодом {listing.code}: {listing.stderr.strip()[:150]}")
+    items = [line.strip() for line in listing.stdout.splitlines() if line.strip()]
+    limit = min(int(p.get("max_items", 100)), 200)
+    if len(items) > limit:
+        raise ProbeError(f"элементов {len(items)} больше допустимых {limit}")
+    matched = 0
+    for item in items:
+        out = t.run([*p["item_cmd"], item])
+        if out.code != 0:
+            raise ProbeError(f"{p['item_cmd'][0]} для {item[:12]} завершилась с кодом {out.code}")
+        if re.search(p["pattern"], out.stdout, re.MULTILINE):
+            matched += 1
+    return _ok(matched, f"{matched} из {len(items)}")
+
+
 def probe_cli_config(t, p: dict) -> dict:
-    lines = t.run_cli(p["cmd"]).stdout.splitlines()
+    """Строка/раздел конфигурации устройства. Ответ устройства проверяется ДО разбора: при нехватке прав
+    IOS отвечает `% Invalid input…` вместо конфигурации, и все проверки «параметра нет» ложно прошли бы
+    на пустом выводе. Поэтому строка-ошибка `% …` — отказ пробы, а `require` (необязательно) задаёт признак
+    настоящего вывода (например, завершающий `end` running-config)."""
+    text = t.run_cli(p["cmd"]).stdout
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    if re.match(r"\s*%\s", first):
+        raise ProbeError(f"устройство вернуло ошибку: {first.strip()[:120]}")
+    if p.get("require") and not re.search(p["require"], text, re.MULTILINE):
+        raise ProbeError("вывод команды не похож на ожидаемый (нет прав на просмотр конфигурации или неверная команда)")
+    lines = text.splitlines()
     section = p.get("section")
     if section is not None:
         scoped, inside = [], False
@@ -394,6 +428,7 @@ PROBES = {
     "file_regex": probe_file_regex,
     "file_stat": probe_file_stat,
     "cmd_regex": probe_cmd_regex,
+    "cmd_foreach": probe_cmd_foreach,
     "cli_config": probe_cli_config,
     "service_state": probe_service_state,
     "pkg_version": probe_pkg_version,

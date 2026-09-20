@@ -1,0 +1,36 @@
+# Пак «Docker»: проверки хоста с Docker Engine. Перенос правила docker.no_privileged_containers
+# старого агента (collector.py: docker ps -q -> docker inspect).
+#
+# Применяется вместе с паком ОС (ubuntu-server и т. п.): агент выполняет все подошедшие паки за один прогон.
+# Признак Docker на хосте — сокет /var/run/docker.sock.
+#
+# Отличие от старого агента: если docker недоступен или отказал в доступе, проверка получает error
+# («не удалось проверить»), а не «привилегированных контейнеров нет». Список контейнеров и inspect по
+# каждому идентификатору выполняются отдельными вызовами, каждый проходит белый список агента.
+#
+# Проверок пока одна (baseline = подтверждено на оборудовании, а не «полный набор»); расширение:
+# userns-remap, TCP-доступ к сокету, icc — по мере необходимости.
+
+pack: docker
+version: 1.0.0
+maturity: baseline
+verified_on: ["Docker Engine 29.3.1 на Ubuntu 24.04.4 LTS"]
+tags: [container-host, docker]
+transport: local
+
+detect:
+  - probe: { type: file_stat, path: /var/run/docker.sock, field: mode }
+    regex: '^\d+$'
+
+checks:
+  - id: docker.no_privileged_containers
+    title: Нет контейнеров, запущенных в privileged-режиме
+    probe:
+      type: cmd_foreach
+      list_cmd: [docker, ps, -q]
+      item_cmd: [docker, inspect, --format, "{{.HostConfig.Privileged}}"]
+      pattern: '^true$'
+    assert: { op: eq, value: 0 }
+    severity: critical
+    remediation: Убрать флаг --privileged из запуска контейнеров, использовать точечные --cap-add.
+    refs: [{ source: "CIS Docker Benchmark (адаптировано)" }]
