@@ -144,6 +144,10 @@ def ingest(
                 check_id=r.check_id,
                 pack_id=r.pack_id,
                 pack_version=r.pack_version,
+                title=r.title,
+                severity=r.severity,
+                remediation=r.remediation,
+                evidence=r.evidence,
             )
         )
 
@@ -188,6 +192,9 @@ def ingest(
                 pack_id=r.pack_id,
                 pack_version=r.pack_version,
                 evidence=r.evidence,
+                title=r.title,
+                severity=r.severity,
+                remediation=r.remediation,
             )
         )
 

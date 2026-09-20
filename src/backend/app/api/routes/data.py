@@ -258,9 +258,15 @@ def get_software_by_asset(asset_id: str, current_user: User = Depends(get_curren
 
 _HARDENING_SELECT = """
     SELECT
-        hc.id, hc.actual_value, hc.expected_value, hc.status, hc.checked_at,
+        hc.id, hc.actual_value, hc.expected_value, hc.status, hc.checked_at, hc.evidence,
+        hc.pack_id, hc.pack_version,
         a.id AS asset_id, a.hostname AS asset_hostname,
-        r.id AS rule_id, r.title AS rule_title, r.rule_code, r.severity, r.expected_value AS rule_expected_value
+        r.id AS rule_id, r.expected_value AS rule_expected_value,
+        -- Результаты контент-пака не имеют строки в hardening_rules: метаданные хранятся в самой записи.
+        COALESCE(r.title, hc.title) AS rule_title,
+        COALESCE(r.rule_code, hc.check_id) AS rule_code,
+        COALESCE(r.severity, hc.severity) AS severity,
+        COALESCE(r.remediation, hc.remediation) AS remediation
     FROM hardening_checks hc
     JOIN assets a ON a.id = hc.asset_id
     JOIN environments e ON e.id = a.environment_id
@@ -275,12 +281,15 @@ def _hardening_row_to_dict(row: dict) -> dict:
         "expected_value": row["expected_value"] or row["rule_expected_value"],
         "status": row["status"],
         "checked_at": row["checked_at"],
+        "evidence": row["evidence"],
+        "pack": {"id": row["pack_id"], "version": row["pack_version"]} if row["pack_id"] else None,
         "asset": {"id": row["asset_id"], "hostname": row["asset_hostname"]},
         "rule": {
             "id": row["rule_id"],
             "title": row["rule_title"],
             "rule_code": row["rule_code"],
             "severity": row["severity"],
+            "remediation": row["remediation"],
         },
     }
 

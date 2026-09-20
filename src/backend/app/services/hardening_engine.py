@@ -31,6 +31,9 @@ class CheckResult:
     pack_id: str | None = None
     pack_version: str | None = None
     evidence: str | None = None
+    title: str | None = None
+    severity: str | None = None
+    remediation: str | None = None
 
 
 def _lookup_fact(facts: dict, rule_code: str) -> tuple[object | None, bool]:

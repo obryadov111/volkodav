@@ -40,13 +40,14 @@ checks:
 
 | type | Параметры | Результат |
 |---|---|---|
-| `file_kv` | `path`, `key`, `separator` (whitespace/equals), `default`, `match` (first/last), `ignore_case` | значение параметра |
+| `file_kv` | `path`, `key`, `separator` (whitespace/equals), `default`, `match` (first/last), `ignore_case`, `follow_include` | значение параметра; с `follow_include: true` раскрываются `Include` (sshd_config.d/*.conf) |
 | `file_regex` | `path`, `pattern` | группа 1 (или совпадение); нет совпадения — пусто |
 | `file_stat` | `path`, `field` (mode/owner/group/uid/gid) | права/владелец без чтения содержимого |
 | `cmd_regex` | `cmd` (argv, без shell), `pattern` | группа 1 (или совпадение) |
 | `cli_config` | `cmd` (show/display, `/export`, `… print`), `match`, `section` | совпавшая строка конфигурации устройства |
 | `service_state` | `service`, `field` (active/enabled) | состояние службы systemd |
 | `pkg_version` | `package` | версия пакета; пусто — не установлен |
+| `first_of` | `probes` (2–5 проб, без вложенного `first_of`) | результат первой пробы, нашедшей значение (например, `ufw status`, иначе файл конфигурации) |
 
 Агент выполняет только эти пробы и только команды из собственного белого списка.
 Чтение `/etc/shadow` и ключей файловыми пробами запрещено (для прав — `file_stat`).
@@ -59,3 +60,15 @@ checks:
 Для прав файлов используйте `mode_within`, а не `lte`: `604` численно меньше `640`, но шире по правам.
 Проба ничего не нашла, а оператор не `exists`/`absent` — статус `error`, а не `fail`
 («нечего сравнивать»).
+
+## Ловушки YAML
+
+- `no`, `yes`, `on`, `off` без кавычек — булевы значения, а не строки. Всегда `"no"`, `"yes"`.
+- Права файлов и версии — строки в кавычках: `0640` YAML читает как восьмеричное число 416.
+- Регулярные выражения — в одинарных кавычках (`'^\s*(\d)'`), чтобы обратные слэши не обрабатывались YAML.
+
+## Пак `ubuntu-server`
+
+Первый пак (этап 1): перенос 12 из 14 прежних правил `hardening_rules` и логики `collect_*` старого агента. Где старая логика
+давала неверный результат, пак её исправляет; каждое отличие помечено в самом файле («ОТЛИЧИЕ ОТ СТАРОГО АГЕНТА»)
+и зафиксировано тестом `tests/test_ubuntu_pack_regression.py`. Подробно — `docs/agent-packs/stage1-report.md`.

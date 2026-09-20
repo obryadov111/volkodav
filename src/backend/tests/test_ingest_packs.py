@@ -197,3 +197,83 @@ def test_platform_tags_are_kept_when_a_later_run_omits_them(client, db, pack_reg
     client.post("/api/ingest", json=legacy, headers={"X-Agent-Api-Key": agent_key})
     tags = db.execute(text("SELECT platform_tags FROM assets WHERE hostname = 'web-01'")).scalar()
     assert tags == ["linux-server", "debian-family", "ubuntu"]
+
+
+# ---------- метаданные результатов пака в API (интерфейс читает их без изменений) ----------
+
+def _viewer_headers(make_user, add_membership, auth_header, org_id):
+    user_id = make_user("viewer@example.com")
+    add_membership(user_id, org_id, "viewer")
+    return auth_header("viewer@example.com")
+
+
+def test_hardening_api_shows_pack_results_with_title_severity_evidence_and_pack(
+    client, make_org, make_agent_key, make_user, add_membership, auth_header, pack_registry
+):
+    org_id = make_org("API Org")
+    key = make_agent_key(org_id)
+    client.post("/api/ingest", json=pack_payload(), headers={"X-Agent-Api-Key": key})
+
+    resp = client.get(f"/api/organizations/{org_id}/hardening", headers=_viewer_headers(make_user, add_membership, auth_header, org_id))
+
+    assert resp.status_code == 200, resp.text
+    by_code = {item["rule"]["rule_code"]: item for item in resp.json()}
+    item = by_code["ssh.permit_root_login"]
+    assert item["rule"]["title"] == "Запрет root по SSH"
+    assert item["rule"]["severity"] == "critical"
+    assert item["rule"]["id"] is None  # строки в hardening_rules нет — данные из самой записи
+    assert item["status"] == "fail" and item["actual_value"] == "yes"
+    assert item["expected_value"] == "одно из: no, prohibit-password"
+    assert item["evidence"] == "PermitRootLogin yes"
+    assert item["pack"] == {"id": "ubuntu-test", "version": "1.0.0"}
+    assert by_code["ssh.max_auth_tries"]["rule"]["title"] == "Число попыток"
+
+
+def test_hardening_api_still_serves_legacy_results_from_the_rules_table(
+    client, make_org, make_agent_key, make_user, add_membership, auth_header, pack_registry
+):
+    org_id = make_org("Legacy API Org")
+    key = make_agent_key(org_id)
+    legacy = {"environment": "prod", "asset": {"hostname": "old-01", "asset_type": "server"},
+              "facts": {"ssh": {"permit_root_login": "yes"}}}
+    client.post("/api/ingest", json=legacy, headers={"X-Agent-Api-Key": key})
+
+    resp = client.get(f"/api/organizations/{org_id}/hardening", headers=_viewer_headers(make_user, add_membership, auth_header, org_id))
+
+    by_code = {item["rule"]["rule_code"]: item for item in resp.json()}
+    item = by_code["ssh.permit_root_login"]
+    assert item["rule"]["title"] == "Запрет входа по SSH под root" and item["rule"]["severity"] == "critical"
+    assert item["rule"]["remediation"] and item["rule"]["id"] is not None
+    assert item["pack"] is None and item["evidence"] is None
+
+
+def test_scan_history_keeps_check_metadata_snapshot(client, db, pack_registry, agent_key):
+    client.post("/api/ingest", json=pack_payload(), headers={"X-Agent-Api-Key": agent_key})
+    row = db.execute(
+        text("SELECT title, severity, remediation FROM scan_check_results WHERE check_id = 'ssh.permit_root_login'")
+    ).one()
+    assert row[0] == "Запрет root по SSH" and row[1] == "critical"
+
+
+# ---------- настоящий пак, без подмены реестра ----------
+
+def test_shipped_pack_is_served_to_agents_and_evaluated_end_to_end(client, db, agent_key):
+    from tests import test_ubuntu_pack_regression as regression
+
+    MANIFEST, PACK = regression.MANIFEST, regression.PACK
+    resp = client.get("/api/agent/manifests?transport=local", headers={"X-Agent-Api-Key": agent_key})
+    served = {m["manifest"]["pack"]: m for m in resp.json()["manifests"]}
+    assert served["ubuntu-server"]["manifest"] == MANIFEST  # реестр по умолчанию отдаёт тот же пак, что лежит в репозитории
+
+    raw = regression.probes.run_manifest(regression.make_host(), MANIFEST)
+    payload = {
+        "environment": "prod",
+        "asset": {"hostname": "ubuntu-01", "asset_type": "linux-server"},
+        "platform_tags": MANIFEST["tags"],
+        "pack": {"id": PACK.pack, "version": PACK.version},
+        "probe_results": raw,
+    }
+    body = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": agent_key}).json()
+
+    assert body["checks"] == {"total": 12, "passed": 12, "failed": 0, "errors": 0}  # эталонно защищённый хост
+    assert body["compliance_score"] == 100.0 and body["coverage"]["ratio"] == 100.0
