@@ -34,6 +34,9 @@ def evaluate_pack(pack: Pack, probe_results: dict) -> list[CheckResult]:
                 pack_id=pack.pack,
                 pack_version=pack.version,
                 evidence=evidence,
+                title=check.title,
+                severity=check.severity,
+                remediation=check.remediation,
             )
         )
     return results

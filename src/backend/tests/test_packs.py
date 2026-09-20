@@ -249,7 +249,7 @@ def test_manifest_contains_probes_but_not_assertions():
     assert manifest["checks"][0] == {
         "id": "ssh.permit_root_login",
         "probe": {"type": "file_kv", "path": "/etc/ssh/sshd_config", "key": "PermitRootLogin",
-                  "separator": "whitespace", "match": "first", "ignore_case": True},
+                  "separator": "whitespace", "match": "first", "ignore_case": True, "follow_include": False},
     }
     dumped = str(manifest)
     assert "assert" not in dumped and "severity" not in dumped and "remediation" not in dumped
@@ -315,3 +315,72 @@ def test_broken_pack_error_names_the_file(tmp_path):
 
 def test_missing_packs_directory_gives_empty_registry(tmp_path):
     assert load_registry(tmp_path / "nope").latest() == []
+
+
+# ---------- first_of и follow_include в формате пака ----------
+
+def _first_of_pack(probe, transport="local", detect=None):
+    return make_pack(
+        transport=transport,
+        detect=detect or BASE_PACK["detect"],
+        checks=[{"id": "fw.enabled", "title": "x", "probe": probe, "assert": {"op": "in", "value": ["active", "yes"]}}],
+    )
+
+
+UFW_STATUS = {"type": "cmd_regex", "cmd": ["ufw", "status", "verbose"], "pattern": "Status:\\s*(\\w+)"}
+UFW_CONF = {"type": "file_kv", "path": "/etc/ufw/ufw.conf", "key": "ENABLED", "separator": "equals"}
+
+
+def test_first_of_probe_is_valid_and_reaches_the_manifest():
+    pack = Pack.model_validate(_first_of_pack({"type": "first_of", "probes": [UFW_STATUS, UFW_CONF]}))
+    probe = build_manifest(pack)["checks"][0]["probe"]
+    assert probe["type"] == "first_of" and [p["type"] for p in probe["probes"]] == ["cmd_regex", "file_kv"]
+
+
+@pytest.mark.parametrize(
+    "probe, message",
+    [
+        ({"type": "first_of", "probes": [UFW_CONF]}, "at least 2"),
+        ({"type": "first_of", "probes": [UFW_CONF] * 6}, "at most 5"),
+        ({"type": "first_of", "probes": [{"type": "first_of", "probes": [UFW_STATUS, UFW_CONF]}, UFW_CONF]}, "does not match any"),
+        ({"type": "first_of", "probes": [UFW_STATUS, {**UFW_CONF, "path": "relative/path"}]}, "абсолютным"),
+    ],
+)
+def test_invalid_first_of_is_rejected(probe, message):
+    with pytest.raises(ValueError, match=message):
+        Pack.model_validate(_first_of_pack(probe))
+
+
+def test_ssh_pack_rejects_local_probe_hidden_inside_first_of():
+    cli = {"type": "cli_config", "cmd": "show version", "match": "x"}
+    data = _first_of_pack(
+        {"type": "first_of", "probes": [cli, UFW_CONF]}, transport="ssh",
+        detect=[{"probe": cli, "equals": "x"}],
+    )
+    with pytest.raises(ValueError, match="транспорт ssh допускает только"):
+        Pack.model_validate(data)
+
+
+def test_ssh_pack_rejects_modifying_command_inside_first_of():
+    cli = {"type": "cli_config", "cmd": "show version", "match": "x"}
+    reload_probe = {"type": "cmd_regex", "cmd": ["reload"], "pattern": "x"}
+    data = _first_of_pack({"type": "first_of", "probes": [cli, reload_probe]}, transport="ssh", detect=[{"probe": cli, "equals": "x"}])
+    with pytest.raises(ValueError, match="только команды на чтение"):
+        Pack.model_validate(data)
+
+
+def test_follow_include_is_a_known_option_and_defaults_off():
+    data = make_pack()
+    data["checks"][0]["probe"]["follow_include"] = True
+    assert Pack.model_validate(data).checks[0].probe.follow_include is True
+    assert Pack.model_validate(BASE_PACK).checks[0].probe.follow_include is False
+
+
+def test_default_registry_ships_ubuntu_server_pack():
+    from app.api.deps import get_pack_registry
+
+    pack = get_pack_registry().get("ubuntu-server")
+
+    assert pack is not None and pack.maturity == "baseline" and pack.transport == "local"
+    assert len(pack.checks) == 12
+    assert "ubuntu" in pack.tags and "linux-server" in pack.tags

@@ -64,6 +64,7 @@ class FileKvProbe(StrictModel):
     default: str | None = None
     match: Literal["first", "last"] = "first"
     ignore_case: bool = True
+    follow_include: bool = False  # раскрывать директивы Include (sshd_config.d/*.conf); только в пределах каталога файла
 
     _path = field_validator("path")(_validate_absolute_path)
 
@@ -160,10 +161,25 @@ class PkgVersionProbe(StrictModel):
         return package
 
 
-Probe = Annotated[
-    FileKvProbe | FileRegexProbe | FileStatProbe | CmdRegexProbe | CliConfigProbe | ServiceStateProbe | PkgVersionProbe,
-    Field(discriminator="type"),
-]
+LeafProbe = (
+    FileKvProbe | FileRegexProbe | FileStatProbe | CmdRegexProbe | CliConfigProbe | ServiceStateProbe | PkgVersionProbe
+)
+
+
+class FirstOfProbe(StrictModel):
+    """Несколько источников одного и того же значения по порядку: берётся первый, нашедший значение
+    (например, состояние ufw: сначала `ufw status`, затем файл конфигурации). Вложенность — один уровень."""
+
+    type: Literal["first_of"]
+    probes: list[Annotated[LeafProbe, Field(discriminator="type")]] = Field(min_length=2, max_length=5)
+
+
+Probe = Annotated[LeafProbe | FirstOfProbe, Field(discriminator="type")]
+
+
+def leaf_probes(probe) -> list:
+    """Пробы без составной обёртки: для проверок, которые должны видеть каждую реальную пробу."""
+    return list(probe.probes) if probe.type == "first_of" else [probe]
 
 SSH_PROBE_TYPES = {"cli_config", "cmd_regex"}
 
@@ -272,7 +288,11 @@ class Pack(StrictModel):
             raise ValueError(f"maturity={self.maturity} требует verified_on (версии, на которых проверено)")
 
         if self.transport == "ssh":
-            probes = [check.probe for check in self.checks] + [rule.probe for rule in self.detect]
+            probes = [
+                leaf
+                for probe in [check.probe for check in self.checks] + [rule.probe for rule in self.detect]
+                for leaf in leaf_probes(probe)
+            ]
             wrong = sorted({p.type for p in probes if p.type not in SSH_PROBE_TYPES})
             if wrong:
                 raise ValueError(f"транспорт ssh допускает только cli_config и cmd_regex, найдено: {', '.join(wrong)}")

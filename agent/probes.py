@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import hmac
 import json
@@ -30,6 +31,8 @@ MANIFEST_SCHEMA = 1
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 MAX_FILE_BYTES = 2_000_000
 COMMAND_TIMEOUT = 15
+MAX_INCLUDE_DEPTH = 5
+MAX_INCLUDE_FILES = 50
 
 
 class ManifestError(Exception):
@@ -163,6 +166,11 @@ class LocalTransport:
         except OSError as exc:
             raise ProbeError(f"не удалось получить stat {path}: {exc.strerror or exc}") from exc
 
+    def glob(self, pattern: str) -> list[str]:
+        """Файлы по маске в лексическом порядке; запрещённые политикой пути в выдачу не попадают."""
+        found = sorted(glob.glob(pattern))[:MAX_INCLUDE_FILES]
+        return [p for p in found if not any(d.search(p) or d.search(os.path.realpath(p)) for d in DENIED_PATH_PATTERNS)]
+
     def run(self, argv: list[str]) -> CmdOutput:
         policy = LOCAL_COMMAND_POLICY.get(argv[0]) if argv else None
         if policy is None or not policy.match(" ".join(argv[1:])):
@@ -241,19 +249,47 @@ def _search(pattern: str, text: str) -> tuple[str | None, str | None]:
     return (m.group(1) if m.groups() else m.group(0)), m.group(0)
 
 
+def _expand_lines(t, path: str, base_dir: str, follow_include: bool, skip_match: bool, state: dict, depth: int = 0):
+    """Строки файла в порядке разбора. Include подставляется на месте директивы (как в sshd: маска,
+    относительные пути — от base_dir, файлы по маске в лексическом порядке). Строки после Match
+    условные и в глобальное значение не входят; в sshd блок Match заканчивается вместе с файлом,
+    поэтому Match во включённом файле не «протекает» в следующий."""
+    for raw in t.read_file(path).splitlines():
+        line = raw.strip()
+        lowered = line.lower()
+        if skip_match and lowered.startswith("match "):
+            return
+        if follow_include and lowered.startswith("include "):
+            if depth >= MAX_INCLUDE_DEPTH:
+                continue
+            for pattern in line.split()[1:]:
+                full = pattern if pattern.startswith("/") else base_dir.rstrip("/") + "/" + pattern
+                for included in t.glob(full):
+                    if state["files"] >= MAX_INCLUDE_FILES:
+                        return
+                    state["files"] += 1
+                    try:
+                        yield from _expand_lines(t, included, base_dir, follow_include, skip_match, state, depth + 1)
+                    except ProbeError:
+                        continue  # нечитаемый включаемый файл не отменяет остальные
+            continue
+        yield raw
+
+
 def probe_file_kv(t, p: dict) -> dict:
-    """Параметр `ключ значение` / `ключ=значение`. Для формата whitespace (sshd_config) разбор
-    останавливается на первой строке Match — глобальные параметры находятся выше неё."""
-    text = t.read_file(p["path"])
+    """Параметр `ключ значение` / `ключ=значение`. Для формата whitespace (sshd_config) разбор в каждом
+    файле останавливается на строке Match — параметры ниже неё условные. С follow_include: true
+    директивы Include раскрываются (на Ubuntu 22.04+ параметры sshd лежат и в sshd_config.d/*.conf,
+    а первое найденное значение побеждает)."""
     key, sep = p["key"], p.get("separator", "whitespace")
     ignore_case, take_last = p.get("ignore_case", True), p.get("match", "first") == "last"
+    lines = _expand_lines(t, p["path"], os.path.dirname(p["path"]), bool(p.get("follow_include")),
+                          sep == "whitespace", {"files": 0})
     value = line_found = None
-    for raw in text.splitlines():
+    for raw in lines:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        if sep == "whitespace" and line.lower().startswith("match "):
-            break
         parts = line.split("=", 1) if sep == "equals" else line.split(None, 1)
         if len(parts) != 2:
             continue
@@ -333,6 +369,26 @@ def probe_pkg_version(t, p: dict) -> dict:
     return _ok(None if (not text or "is not installed" in text) else text)
 
 
+def probe_first_of(t, p: dict) -> dict:
+    """Источники по порядку: результат первой пробы, нашедшей значение. Так старый сборщик получал
+    состояние ufw: `ufw status` (нужен root), иначе файл конфигурации. Если ни одна не нашла значение,
+    но хоть один источник прочитан — значение пусто; если ни один не доступен — проба не выполнилась."""
+    readable, last_error = False, None
+    for sub in p["probes"]:
+        if sub.get("type") == "first_of":
+            raise ProbeError("first_of не может содержать другой first_of")
+        result = run_probe(t, sub)
+        if result["found"]:
+            readable = True
+            if result["value"] is not None:
+                return result
+        else:
+            last_error = result.get("error")
+    if readable:
+        return _ok(None)
+    raise ProbeError(last_error or "ни один источник first_of недоступен")
+
+
 PROBES = {
     "file_kv": probe_file_kv,
     "file_regex": probe_file_regex,
@@ -341,6 +397,7 @@ PROBES = {
     "cli_config": probe_cli_config,
     "service_state": probe_service_state,
     "pkg_version": probe_pkg_version,
+    "first_of": probe_first_of,
 }
 
 

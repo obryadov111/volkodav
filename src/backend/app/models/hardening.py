@@ -39,6 +39,10 @@ class HardeningCheck(Base):
     check_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     pack_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     pack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    severity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ScanCheckResult(Base):
@@ -57,6 +61,9 @@ class ScanCheckResult(Base):
     pack_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     pack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    severity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class HardeningReport(Base):

@@ -416,3 +416,129 @@ def test_run_manifest_logs_every_probe(tmp_path):
 
     assert results["a.b"]["value"] == "ubuntu"
     assert log[0]["check"] == "a.b" and log[0]["probe"] == "file_kv" and log[0]["found"] is True
+
+
+# ---------- file_kv: follow_include ----------
+
+def make_ssh_tree(tmp_path, main, dropins=None):
+    (tmp_path / "sshd_config.d").mkdir()
+    for name, content in (dropins or {}).items():
+        (tmp_path / "sshd_config.d" / name).write_text(content, encoding="utf-8")
+    return write(tmp_path, "sshd_config", main)
+
+
+def kv(path, key, **extra):
+    return {"type": "file_kv", "path": path, "key": key, "follow_include": True, **extra}
+
+
+def test_include_is_off_by_default(tmp_path):
+    path = make_ssh_tree(tmp_path, "Include sshd_config.d/*.conf\n", {"a.conf": "PermitRootLogin no\n"})
+    plain = {"type": "file_kv", "path": path, "key": "PermitRootLogin"}
+    assert run_probe(LocalTransport(), plain)["value"] is None
+    assert run_probe(LocalTransport(), kv(path, "PermitRootLogin"))["value"] == "no"
+
+
+def test_include_first_match_wins_across_files_in_lexical_order(tmp_path):
+    path = make_ssh_tree(
+        tmp_path, "Include sshd_config.d/*.conf\nPermitRootLogin yes\n",
+        {"60-cloud.conf": "PermitRootLogin prohibit-password\n", "50-hardening.conf": "PermitRootLogin no\n"},
+    )
+    result = run_probe(LocalTransport(), kv(path, "PermitRootLogin"))
+    assert result["value"] == "no" and result["evidence"] == "PermitRootLogin no"  # 50-* раньше 60-*, и оба раньше основного файла
+
+
+def test_directive_after_include_is_used_when_dropins_are_silent(tmp_path):
+    path = make_ssh_tree(tmp_path, "Include sshd_config.d/*.conf\nMaxAuthTries 3\n", {"a.conf": "X11Forwarding no\n"})
+    assert run_probe(LocalTransport(), kv(path, "MaxAuthTries"))["value"] == "3"
+
+
+def test_match_block_ends_with_its_file_and_does_not_leak_into_the_next_dropin(tmp_path):
+    # sshd: Match действует до конца файла; следующий включаемый файл снова глобальный
+    path = make_ssh_tree(
+        tmp_path, "Include sshd_config.d/*.conf\n",
+        {"10-a.conf": "Match User backup\n    PermitRootLogin yes\n", "20-b.conf": "PermitRootLogin no\n"},
+    )
+    assert run_probe(LocalTransport(), kv(path, "PermitRootLogin"))["value"] == "no"
+
+
+def test_absolute_include_path_and_missing_glob_are_handled(tmp_path):
+    other = tmp_path / "extra"
+    other.mkdir()
+    (other / "x.conf").write_text("PasswordAuthentication no\n", encoding="utf-8")
+    path = write(tmp_path, "sshd_config", f"Include {other}/*.conf\nInclude /nonexistent/*.conf\n")
+    assert run_probe(LocalTransport(), kv(path, "PasswordAuthentication"))["value"] == "no"
+
+
+def test_self_including_file_terminates(tmp_path):
+    path = tmp_path / "sshd_config"
+    path.write_text(f"Include {path}\nMaxAuthTries 3\n", encoding="utf-8")
+    result = run_probe(LocalTransport(), kv(str(path), "MaxAuthTries"))
+    assert result["found"] and result["value"] == "3"
+
+
+def test_include_cannot_pull_in_denied_files(tmp_path):
+    link = tmp_path / "sneaky.conf"
+    link.symlink_to("/etc/shadow")
+    path = write(tmp_path, "sshd_config", f"Include {tmp_path}/sneaky.conf\nMaxAuthTries 3\n")
+    result = run_probe(LocalTransport(), kv(path, "root"))
+    assert result["found"] and result["value"] is None  # запрещённый файл молча пропущен, не прочитан
+
+
+def test_unreadable_include_does_not_cancel_the_rest(tmp_path):
+    path = make_ssh_tree(tmp_path, "Include sshd_config.d/*.conf\nMaxAuthTries 3\n", {"a.conf": "X\n"})
+    (tmp_path / "sshd_config.d" / "a.conf").chmod(0)
+    try:
+        assert run_probe(LocalTransport(), kv(path, "MaxAuthTries"))["value"] == "3"
+    finally:
+        (tmp_path / "sshd_config.d" / "a.conf").chmod(0o644)
+
+
+# ---------- first_of ----------
+
+def first_of(*subs):
+    return {"type": "first_of", "probes": list(subs)}
+
+
+def test_first_of_takes_the_first_source_that_has_a_value(tmp_path):
+    a = write(tmp_path, "a.conf", "OTHER=1\n")
+    b = write(tmp_path, "b.conf", "ENABLED=yes\n")
+    probe = first_of({"type": "file_kv", "path": a, "key": "ENABLED", "separator": "equals"},
+                     {"type": "file_kv", "path": b, "key": "ENABLED", "separator": "equals"})
+    result = run_probe(LocalTransport(), probe)
+    assert result["value"] == "yes" and result["evidence"] == "ENABLED=yes"
+
+
+def test_first_of_prefers_the_earlier_source_and_skips_unavailable_ones(tmp_path):
+    a = write(tmp_path, "a.conf", "ENABLED=no\n")
+    b = write(tmp_path, "b.conf", "ENABLED=yes\n")
+    missing = str(tmp_path / "missing")
+    kvp = lambda path: {"type": "file_kv", "path": path, "key": "ENABLED", "separator": "equals"}  # noqa: E731
+    assert run_probe(LocalTransport(), first_of(kvp(a), kvp(b)))["value"] == "no"
+    assert run_probe(LocalTransport(), first_of(kvp(missing), kvp(b)))["value"] == "yes"
+
+
+def test_first_of_distinguishes_nothing_found_from_nothing_readable(tmp_path):
+    a = write(tmp_path, "a.conf", "OTHER=1\n")
+    kvp = lambda path: {"type": "file_kv", "path": path, "key": "ENABLED", "separator": "equals"}  # noqa: E731
+    readable_empty = run_probe(LocalTransport(), first_of(kvp(a), kvp(a)))
+    assert readable_empty["found"] is True and readable_empty["value"] is None
+    unreadable = run_probe(LocalTransport(), first_of(kvp(str(tmp_path / "x")), kvp(str(tmp_path / "y"))))
+    assert unreadable["found"] is False and "не удалось прочитать" in unreadable["error"]
+
+
+def test_first_of_with_command_then_file_like_ufw(tmp_path):
+    conf = write(tmp_path, "ufw.conf", "ENABLED=yes\n")
+    t = FakeTransport(outputs={"ufw status verbose": "ERROR: need root"})
+    t.read_file = LocalTransport().read_file
+    t.glob = LocalTransport().glob
+    probe = first_of({"type": "cmd_regex", "cmd": ["ufw", "status", "verbose"], "pattern": "(?i)Status:\\s*(active|inactive)"},
+                     {"type": "file_kv", "path": conf, "key": "ENABLED", "separator": "equals"})
+    assert run_probe(t, probe)["value"] == "yes"  # status без root ничего не дал — взят файл
+    t.outputs["ufw status verbose"] = "Status: active\n"
+    assert run_probe(t, probe)["value"] == "active"
+
+
+def test_first_of_cannot_be_nested():
+    inner = first_of({"type": "file_kv", "path": "/etc/a", "key": "k"}, {"type": "file_kv", "path": "/etc/b", "key": "k"})
+    result = run_probe(LocalTransport(), first_of(inner, {"type": "file_kv", "path": "/etc/c", "key": "k"}))
+    assert result["found"] is False and "first_of" in result["error"]
