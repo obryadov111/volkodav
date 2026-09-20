@@ -9,27 +9,28 @@ expected_value — ожидаемое значение) и возвращает 
 `error` — правило применимо к типу актива, но агент не прислал факт для
 этого ключа (нечего сравнивать). Правила с product_type, не совпадающим
 с типом актива, пропускаются (не попадают в результат вовсе).
+
+Проверки контент-паков оцениваются отдельно (app/services/packs/evaluate.py),
+результат в том же формате CheckResult.
 """
 from dataclasses import dataclass
 
 from app.models.hardening import HardeningRule
+from app.services.packs.assertions import normalize_value as _normalize
 
 
 @dataclass
 class CheckResult:
-    rule_id: str
+    rule_id: str | None
     rule_code: str | None
     actual_value: str | None
     expected_value: str | None
     status: str  # pass | fail | error
-
-
-def _normalize(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value).strip().lower()
+    # Заполняются только для проверок контент-пака (у правил из hardening_rules — None).
+    check_id: str | None = None
+    pack_id: str | None = None
+    pack_version: str | None = None
+    evidence: str | None = None
 
 
 def _lookup_fact(facts: dict, rule_code: str) -> tuple[object | None, bool]:
@@ -43,18 +44,26 @@ def _lookup_fact(facts: dict, rule_code: str) -> tuple[object | None, bool]:
     return bucket[key], True
 
 
-def evaluate_asset(facts: dict, rules: list[HardeningRule], asset_type: str | None) -> list[CheckResult]:
+def evaluate_asset(
+    facts: dict,
+    rules: list[HardeningRule],
+    asset_type: str | None,
+    platform_tags: list[str] | None = None,
+) -> list[CheckResult]:
     """Прогоняет факты одного актива против набора правил.
 
     Правило применяется, если rule.product_type пуст (общее для всех типов
-    активов) либо совпадает с asset_type актива (регистронезависимо).
+    активов) либо совпадает с asset_type или одним из platform_tags актива
+    (регистронезависимо). Теги выражают иерархию платформ без отдельной таблицы:
+    у Astra Linux они, например, ["linux-server", "debian-family", "astra-se"] —
+    общее правило для linux-server и специфичное для astra-se применятся оба.
     """
     results: list[CheckResult] = []
-    normalized_asset_type = (asset_type or "").strip().lower()
+    scopes = {_normalize(asset_type), *(_normalize(tag) for tag in platform_tags or [])} - {""}
 
     for rule in rules:
         rule_scope = (rule.product_type or "").strip().lower()
-        if rule_scope and normalized_asset_type and rule_scope != normalized_asset_type:
+        if rule_scope and scopes and rule_scope not in scopes:
             continue
 
         actual, found = _lookup_fact(facts, rule.rule_code or "")
@@ -83,6 +92,23 @@ def evaluate_asset(facts: dict, rules: list[HardeningRule], asset_type: str | No
         )
 
     return results
+
+
+def compute_coverage(results: list[CheckResult]) -> dict:
+    """Насколько оценка опирается на реально выполненные проверки.
+
+    compliance_score считается только по pass/fail и не учитывает error, поэтому при
+    неполном сборе оценка выглядит лучше, чем есть. Покрытие показывает это явно:
+    evaluated — сколько проверок дали pass/fail, ratio — их доля от всех применимых (%).
+    """
+    total = len(results)
+    evaluated = sum(1 for r in results if r.status in ("pass", "fail"))
+    return {
+        "total": total,
+        "evaluated": evaluated,
+        "errors": total - evaluated,
+        "ratio": round(evaluated / total * 100, 2) if total else None,
+    }
 
 
 def compute_compliance_score(results: list[CheckResult]) -> tuple[float | None, int, int, int]:

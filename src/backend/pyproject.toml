@@ -21,3 +21,8 @@ extend-immutable-calls = [
     "fastapi.Form",
     "fastapi.File",
 ]
+
+[tool.pytest.ini_options]
+# Голый `pytest tests/` (как в CI) должен находить пакеты app и tests без PYTHONPATH.
+pythonpath = ["."]
+testpaths = ["tests"]

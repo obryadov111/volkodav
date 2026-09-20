@@ -290,6 +290,82 @@ def send_ingest(api_url: str, api_key: str, payload: dict, timeout: int = 30) ->
         raise SystemExit(f"Не удалось связаться с бэкендом ({url}): {exc.reason}")
 
 
+# --- режим паков (--use-packs) ---------------------------------------------------
+#
+# Агент получает с сервера подписанные манифесты паков, проверяет подпись, определяет
+# по условиям detect, какой пак подходит платформе, выполняет только его пробы (только
+# чтение) и отправляет результаты в POST /api/ingest как probe_results. Сравнение с
+# нормой делает сервер. Движок проб — рядом, в probes.py (при обычном запуске не нужен).
+
+def fetch_manifests(api_url: str, api_key: str, transport_name: str, timeout: int = 30) -> dict:
+    url = f"{api_url.rstrip('/')}/api/agent/manifests?transport={transport_name}"
+    request = urllib.request.Request(url, headers={"X-Agent-Api-Key": api_key})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"Бэкенд не выдал манифесты: HTTP {exc.code} — {detail}")
+    except urllib.error.URLError as exc:
+        raise SystemExit(f"Не удалось связаться с бэкендом ({url}): {exc.reason}")
+
+
+def build_pack_payload(args: argparse.Namespace, probes_module) -> dict:
+    """Payload ingest по результатам проб пака. Завершает работу (SystemExit) с понятной причиной,
+    если манифест не прошёл проверку подписи или платформа не распознана однозначно."""
+    if not args.pack_key:
+        raise SystemExit("Ошибка: для --use-packs нужен --pack-key или переменная окружения HARDENING_PACK_KEY")
+
+    if args.ssh_host:
+        transport = probes_module.SshTransport(args.ssh_host, args.ssh_user, args.ssh_port, args.ssh_key)
+    else:
+        transport = probes_module.LocalTransport()
+
+    if args.manifests_file:
+        with open(args.manifests_file, encoding="utf-8") as fh:
+            response = json.load(fh)
+    else:
+        if not args.api_key:
+            raise SystemExit("Ошибка: нужен --api-key или переменная окружения HARDENING_AGENT_API_KEY")
+        response = fetch_manifests(args.api_url, args.api_key, transport.name)
+
+    try:
+        manifests = probes_module.load_verified_manifests(response, args.pack_key)
+    except probes_module.ManifestError as exc:
+        raise SystemExit(f"Ошибка безопасности: {exc}")
+
+    if args.pack:
+        manifests = [m for m in manifests if m["pack"] == args.pack]
+    matched = probes_module.select_manifests(transport, manifests)
+    if not matched:
+        raise SystemExit("Платформа не распознана ни одним паком — данные не отправлены (агент не гадает)")
+    if len(matched) > 1:
+        names = ", ".join(m["pack"] for m in matched)
+        raise SystemExit(f"Платформе подходит несколько паков ({names}) — укажите нужный через --pack")
+    manifest = matched[0]
+
+    def log(entry: dict) -> None:
+        print(json.dumps(entry, ensure_ascii=False), file=sys.stderr)
+
+    probe_results = probes_module.run_manifest(transport, manifest, log=log)
+    local = transport.name == "local"
+    return {
+        "environment": args.environment,
+        "asset": {
+            "hostname": args.hostname or args.ssh_host or socket.gethostname(),
+            "ip_address": args.ip_address or (get_primary_ip() if local else None),
+            "os": get_os_pretty_name() if local else None,
+            "asset_type": manifest.get("asset_type") or args.asset_type,
+            "criticality": args.criticality,
+        },
+        "software": collect_software() if local else [],
+        "platform_tags": manifest["tags"],
+        "pack": {"id": manifest["pack"], "version": manifest["version"]},
+        "probe_results": probe_results,
+        "scan_label": args.scan_label,
+    }
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--api-url", required=True, help="Базовый URL бэкенда, например https://hardening.example.com")
@@ -301,6 +377,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--criticality", default="medium", choices=["low", "medium", "high", "critical"])
     parser.add_argument("--scan-label", default=None, help="Метка прогона для отчёта")
     parser.add_argument("--dry-run", action="store_true", help="Собрать факты и вывести payload, не отправляя на бэкенд")
+    packs = parser.add_argument_group("режим паков", "Подписанные манифесты с сервера; нужен probes.py рядом со скриптом")
+    packs.add_argument("--use-packs", action="store_true", help="Собирать по манифестам паков вместо встроенных проверок")
+    packs.add_argument("--pack-key", default=os.environ.get("HARDENING_PACK_KEY"), help="Ключ проверки подписи манифестов (или HARDENING_PACK_KEY)")
+    packs.add_argument("--pack", default=None, help="Ограничить выбор одним паком (id), если подходит несколько")
+    packs.add_argument("--manifests-file", default=None, help="Взять манифесты из файла (JSON ответа /api/agent/manifests) вместо сервера")
+    packs.add_argument("--ssh-host", default=None, help="Внешний сбор с сетевого устройства по SSH (вместо локального хоста)")
+    packs.add_argument("--ssh-user", default=None, help="Пользователь SSH (учётка только на чтение)")
+    packs.add_argument("--ssh-port", type=int, default=22)
+    packs.add_argument("--ssh-key", default=None, help="Путь к приватному ключу SSH (сам ключ в пак не попадает)")
     return parser.parse_args(argv)
 
 
@@ -311,7 +396,15 @@ def main(argv: list[str] | None = None) -> int:
         print("Ошибка: нужен --api-key или переменная окружения HARDENING_AGENT_API_KEY", file=sys.stderr)
         return 1
 
-    payload = build_payload(args)
+    if args.use_packs:
+        try:
+            import probes
+        except ImportError:
+            print("Ошибка: для --use-packs нужен файл probes.py рядом с collector.py", file=sys.stderr)
+            return 1
+        payload = build_pack_payload(args, probes)
+    else:
+        payload = build_payload(args)
 
     if args.dry_run:
         print(json.dumps(payload, indent=2, ensure_ascii=False))

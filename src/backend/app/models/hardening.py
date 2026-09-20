@@ -35,6 +35,10 @@ class HardeningCheck(Base):
     expected_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Только для проверок контент-пака (rule_id у них пустой).
+    check_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pack_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ScanCheckResult(Base):
@@ -49,6 +53,10 @@ class ScanCheckResult(Base):
     expected_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    check_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pack_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class HardeningReport(Base):
