@@ -105,8 +105,8 @@ def test_ingest_with_pack_evaluates_on_server_and_records_versions(client, db, p
     assert asset == ["linux-server", "debian-family", "ubuntu"]
 
     stored = db.execute(text("SELECT collected_data FROM agent_collections")).scalar()
-    assert stored["pack"] == {"id": "ubuntu-test", "version": "1.0.0"}
-    assert stored["probe_results"]["ssh.permit_root_login"]["value"] == "yes"
+    assert stored["packs"][0]["id"] == "ubuntu-test" and stored["packs"][0]["version"] == "1.0.0"
+    assert stored["packs"][0]["probe_results"]["ssh.permit_root_login"]["value"] == "yes"
 
 
 def test_pack_check_without_probe_result_is_error_and_lowers_coverage(client, pack_registry, agent_key):

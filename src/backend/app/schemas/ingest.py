@@ -32,6 +32,14 @@ class IngestProbeResult(BaseModel):
     error: str | None = Field(default=None, max_length=500)
 
 
+class IngestPackRun(BaseModel):
+    """Прогон одного пака: какой пак (и версия) и результаты его проб."""
+
+    id: str = Field(..., max_length=100)
+    version: str = Field(..., max_length=32)
+    probe_results: dict[str, IngestProbeResult] = Field(default_factory=dict)
+
+
 class IngestRequest(BaseModel):
     environment: str = Field(..., description="Имя окружения (создаётся, если не существует)")
     asset: IngestAssetIn
@@ -42,9 +50,13 @@ class IngestRequest(BaseModel):
         default_factory=list, max_length=20,
         description="Теги платформы (класс → семейство → продукт); правило с product_type из тегов тоже применяется",
     )
-    pack: IngestPackRef | None = Field(default=None, description="Пак, по которому агент собрал probe_results")
+    pack: IngestPackRef | None = Field(default=None, description="Один пак (прежний формат): пак для probe_results")
     probe_results: dict[str, IngestProbeResult] = Field(
-        default_factory=dict, description="{id проверки пака: результат пробы}"
+        default_factory=dict, description="{id проверки пака: результат пробы} для одиночного pack"
+    )
+    packs: list[IngestPackRun] = Field(
+        default_factory=list, max_length=10,
+        description="Несколько паков за один прогон актива: ОС + Docker + СУБД. Один прогон — один снимок и общая оценка",
     )
 
 
@@ -62,6 +74,16 @@ class IngestCoverage(BaseModel):
     ratio: float | None = None
 
 
+class IngestPackSummary(BaseModel):
+    id: str
+    version: str
+    maturity: str
+    total: int
+    passed: int
+    failed: int
+    errors: int
+
+
 class IngestResponse(BaseModel):
     batch_id: str
     asset_id: str
@@ -69,4 +91,5 @@ class IngestResponse(BaseModel):
     checks: IngestChecksSummary
     compliance_score: float | None = None
     coverage: IngestCoverage | None = None
+    packs: list[IngestPackSummary] = Field(default_factory=list, description="Итоги по каждому паку прогона")
     report_id: str

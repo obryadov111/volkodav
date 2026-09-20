@@ -542,3 +542,70 @@ def test_first_of_cannot_be_nested():
     inner = first_of({"type": "file_kv", "path": "/etc/a", "key": "k"}, {"type": "file_kv", "path": "/etc/b", "key": "k"})
     result = run_probe(LocalTransport(), first_of(inner, {"type": "file_kv", "path": "/etc/c", "key": "k"}))
     assert result["found"] is False and "first_of" in result["error"]
+
+
+# ---------- cmd_foreach (docker) ----------
+
+FOREACH = {
+    "type": "cmd_foreach", "list_cmd": ["docker", "ps", "-q"],
+    "item_cmd": ["docker", "inspect", "--format", "{{.HostConfig.Privileged}}"], "pattern": "^true$",
+}
+
+
+class DockerFake:
+    """Транспорт с командами и кодами возврата: docker ps / docker inspect."""
+
+    name = "local"
+
+    def __init__(self, containers=None, list_code=0, inspect_code=0):
+        self.containers, self.list_code, self.inspect_code, self.calls = containers or {}, list_code, inspect_code, []
+
+    def run(self, argv):
+        self.calls.append(argv)
+        if argv[:2] == ["docker", "ps"]:
+            return CmdOutput("\n".join(self.containers) + ("\n" if self.containers else ""), "permission denied" if self.list_code else "", self.list_code)
+        return CmdOutput(self.containers.get(argv[-1], "false") + "\n", "", self.inspect_code)
+
+
+def test_foreach_counts_matching_items_and_calls_each_separately():
+    t = DockerFake({"aaa111bbb222": "false", "ccc333ddd444": "true", "eee555fff666": "true"})
+    result = run_probe(t, FOREACH)
+    assert result["value"] == 2 and result["evidence"] == "2 из 3"
+    inspect_calls = [c for c in t.calls if c[1] == "inspect"]
+    assert len(inspect_calls) == 3 and all(c[-1] in t.containers for c in inspect_calls)  # id — отдельный аргумент
+
+
+def test_foreach_empty_list_is_zero_not_failure():
+    assert run_probe(DockerFake({}), FOREACH)["value"] == 0
+
+
+def test_foreach_command_failure_is_probe_failure_never_zero():
+    # недоступный docker не должен выглядеть как «привилегированных контейнеров нет»
+    result = run_probe(DockerFake({"aaa111bbb222": "false"}, list_code=1), FOREACH)
+    assert result["found"] is False and "permission denied" in result["error"]
+    result = run_probe(DockerFake({"aaa111bbb222": "true"}, inspect_code=1), FOREACH)
+    assert result["found"] is False
+
+
+def test_foreach_respects_max_items():
+    t = DockerFake({f"{i:012x}": "false" for i in range(5)})
+    result = run_probe(t, {**FOREACH, "max_items": 3})
+    assert result["found"] is False and "больше допустимых" in result["error"]
+
+
+@pytest.mark.parametrize("argv", [
+    ["docker", "run", "alpine"], ["docker", "exec", "abc123def456"], ["docker", "rm", "abc123def456"],
+    ["docker", "inspect", "--format", "{{.Config.Env}}", "abc123def456"],  # другое поле inspect — секреты окружения
+    ["docker", "inspect", "--format", "{{.HostConfig.Privileged}}", "abc; rm -rf /"],
+    ["docker", "ps", "-a"],
+])
+def test_docker_commands_outside_allowlist_are_refused(argv):
+    with pytest.raises(ProbeError, match="вне белого списка"):
+        LocalTransport().run(argv)
+
+
+def test_allowed_docker_commands_pass_the_policy(monkeypatch):
+    monkeypatch.setattr(probes.shutil, "which", lambda name, path=None: "/usr/bin/docker")
+    monkeypatch.setattr(probes.subprocess, "run", lambda argv, **kw: type("P", (), {"stdout": "", "stderr": "", "returncode": 0})())
+    LocalTransport().run(["docker", "ps", "-q"])
+    LocalTransport().run(["docker", "inspect", "--format", "{{.HostConfig.Privileged}}", "0123456789ab"])

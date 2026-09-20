@@ -84,10 +84,10 @@ def test_local_agent_end_to_end(client, db, agent_key, local_pack, tmp_path):
 
     payload = collector.build_pack_payload(agent_args(manifests), probes)
 
-    assert payload["pack"] == {"id": "ubuntu-test", "version": "1.0.0"}
+    assert [(r["id"], r["version"]) for r in payload["packs"]] == [("ubuntu-test", "1.0.0")]
     assert payload["platform_tags"] == ["linux-server", "debian-family", "ubuntu"]
-    assert "facts" not in payload
-    assert payload["probe_results"]["ssh.permit_root_login"]["value"] == "yes"
+    assert "facts" not in payload and "pack" not in payload
+    assert payload["packs"][0]["probe_results"]["ssh.permit_root_login"]["value"] == "yes"
 
     resp = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": agent_key})
 
@@ -128,16 +128,32 @@ def test_unrecognized_platform_sends_nothing(client, agent_key, local_pack, host
         collector.build_pack_payload(agent_args(manifests), probes)
 
 
-def test_ambiguous_platform_requires_explicit_pack(client, agent_key, local_pack, tmp_path):
+def test_several_matching_packs_are_all_run_and_sent_in_one_payload(client, db, agent_key, local_pack, tmp_path):
+    second = copy.deepcopy(local_pack)
+    second["pack"] = "ubuntu-extra"
+    second["tags"] = ["extra-tag"]
+    serve(PackRegistry([Pack.model_validate(local_pack), Pack.model_validate(second)]))
+    manifests = fetch_manifests_file(client, agent_key, tmp_path, "local")
+
+    payload = collector.build_pack_payload(agent_args(manifests), probes)
+
+    assert [r["id"] for r in payload["packs"]] == ["ubuntu-extra", "ubuntu-test"]
+    assert payload["platform_tags"] == ["extra-tag", "linux-server", "debian-family", "ubuntu"]  # объединение, без повторов
+    body = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": agent_key}).json()
+    assert body["checks"]["total"] == 4  # по 2 проверки от каждого пака, один прогон
+    assert {p["id"]: p["total"] for p in body["packs"]} == {"ubuntu-extra": 2, "ubuntu-test": 2}
+    assert db.execute(text("SELECT COUNT(*) FROM scan_snapshots")).scalar() == 1  # один снимок, а не по одному на пак
+
+
+def test_pack_option_restricts_the_run_to_one_pack(client, agent_key, local_pack, tmp_path):
     second = copy.deepcopy(local_pack)
     second["pack"] = "ubuntu-extra"
     serve(PackRegistry([Pack.model_validate(local_pack), Pack.model_validate(second)]))
     manifests = fetch_manifests_file(client, agent_key, tmp_path, "local")
 
-    with pytest.raises(SystemExit, match="несколько паков"):
-        collector.build_pack_payload(agent_args(manifests), probes)
     payload = collector.build_pack_payload(agent_args(manifests, "--pack", "ubuntu-extra"), probes)
-    assert payload["pack"]["id"] == "ubuntu-extra"
+
+    assert [r["id"] for r in payload["packs"]] == ["ubuntu-extra"]
 
 
 def test_missing_pack_key_is_reported(client, agent_key, local_pack, tmp_path):
@@ -180,7 +196,7 @@ def test_network_device_over_ssh_end_to_end(client, db, agent_key, tmp_path, mon
 
     assert payload["asset"] == {"hostname": "10.0.0.1", "ip_address": None, "os": None,
                                 "asset_type": "network-device", "criticality": "medium"}
-    assert payload["software"] == [] and payload["pack"]["id"] == "cisco-test"
+    assert payload["software"] == [] and [r["id"] for r in payload["packs"]] == ["cisco-test"]
     assert set(commands) == {"show version", "show running-config"}  # только команды на чтение
 
     body = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": agent_key}).json()
