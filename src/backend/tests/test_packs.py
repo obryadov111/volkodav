@@ -385,7 +385,8 @@ def test_default_registry_ships_ubuntu_server_pack():
     pack = get_pack_registry().get("ubuntu-server")
 
     assert pack is not None and pack.maturity == "baseline" and pack.transport == "local"
-    assert len(pack.checks) == 12
+    assert pack.version == "1.1.0"
+    assert len(pack.checks) == 14  # 12 перенесённых из старого агента + 2 из методики ФСТЭК (1.1.0)
     assert "ubuntu" in pack.tags and "linux-server" in pack.tags
 
 

@@ -43,7 +43,14 @@ def _load_legacy_rules():
 
 
 LEGACY_RULES = _load_legacy_rules()
-SHARED = sorted(check.id for check in PACK.checks)  # 12 правил, перенесённых в пак
+_LEGACY_CODES = {rule.rule_code for rule in LEGACY_RULES}
+# Подмножество проверок пака, у которых есть прямой аналог в старом агенте (12 правил, перенесённых
+# на этапе 1). С 1.1.0 в паке есть и проверки без аналога в старом агенте (см. NEW_IN_1_1_0 ниже) —
+# они намеренно не входят в SHARED и не участвуют в сравнении со старой логикой.
+SHARED = sorted(check.id for check in PACK.checks if check.id in _LEGACY_CODES)
+# Проверки, добавленные в 1.1.0 по методике ФСТЭК от 25.11.2025 (раздел ОПС) — не переносились из
+# старого агента и не сравниваются с ним; отдельно протестированы в test_new_checks_1_1_0 ниже.
+NEW_IN_1_1_0 = {"logging.auditd_active", "filesharing.smb_no_guest_access"}
 
 
 class FakeHost:
@@ -91,8 +98,9 @@ HARDENED_FILES = {
     "/etc/security/pwquality.conf": "# comment\nminlen = 14\n",
     "/etc/pam.d/common-auth": "auth required pam_faillock.so preauth deny=5\nauth [success=1] pam_unix.so\n",
     "/proc/sys/net/ipv4/ip_forward": "0\n",
+    "/etc/samba/smb.conf": "[global]\n   workgroup = WORKGROUP\n   security = user\n",
 }
-HARDENED_COMMANDS = {"ufw status verbose": (UFW_ACTIVE, "", 0)}
+HARDENED_COMMANDS = {"ufw status verbose": (UFW_ACTIVE, "", 0), "systemctl is-active auditd": ("active\n", "", 0)}
 
 
 def make_host(files=None, commands=None, drop=()):
@@ -149,7 +157,8 @@ IDENTICAL = {
 def test_old_agent_and_pack_agree_where_the_old_logic_is_correct(scenario, monkeypatch):
     host = IDENTICAL[scenario]()
 
-    old, new = legacy_statuses(host, monkeypatch), pack_statuses(host)
+    old, new_all = legacy_statuses(host, monkeypatch), pack_statuses(host)
+    new = {code: status for code, status in new_all.items() if code in SHARED}
 
     assert set(new) == set(SHARED)
     assert old == new, {c: (old.get(c), new.get(c)) for c in SHARED if old.get(c) != new.get(c)}
@@ -273,11 +282,15 @@ def test_deviations_only_ever_make_the_pack_more_correct_never_hide_a_finding_th
     assert seen_pass_to_fail == allowed_pass_to_fail
 
 
-def test_shipped_pack_covers_exactly_the_twelve_migrated_rules():
+def test_shipped_pack_covers_exactly_the_twelve_migrated_rules_plus_known_new_checks():
     legacy_codes = {rule.rule_code for rule in LEGACY_RULES}
     assert set(SHARED) < legacy_codes  # пак — собственное подмножество прежних правил
     assert legacy_codes - set(SHARED) == {"docker.no_privileged_containers", "postgres.ssl_enabled"}
-    assert all(check.id in legacy_codes for check in PACK.checks)  # ни одного нового кода
+    # 1.1.0: коды сверх старых 14 правил допустимы, только если это именно поднабор из
+    # NEW_IN_1_1_0 (сверка с методикой ФСТЭК) — а не случайное расширение пака.
+    all_ids = {check.id for check in PACK.checks}
+    assert all_ids - legacy_codes == NEW_IN_1_1_0
+    assert all(check.id in legacy_codes | NEW_IN_1_1_0 for check in PACK.checks)
 
 
 def test_pack_metadata_matches_legacy_rules():
@@ -288,5 +301,51 @@ def test_pack_metadata_matches_legacy_rules():
     module = importlib.util.module_from_spec(legacy)
     legacy.loader.exec_module(module)
     severities = {code: severity for code, _t, _e, severity, _r in module.RULES}
-    assert {c.id: c.severity for c in PACK.checks} == {code: severities[code] for code in SHARED}
+    # Сравнение — только по проверкам с аналогом в старом агенте; новые проверки 1.1.0 в сиде не было.
+    migrated = {c.id: c.severity for c in PACK.checks if c.id in SHARED}
+    assert migrated == {code: severities[code] for code in SHARED}
     assert all(c.remediation for c in PACK.checks)
+
+
+# ============================== Новое в 1.1.0 (методика ФСТЭК от 25.11.2025, раздел ОПС) ==============================
+# Проверки без аналога в старом агенте — не часть регрессии выше, тестируются отдельно:
+# pass (эталонный хост), fail (нарушение) и error (компонент не установлен — не ложный pass).
+
+def test_auditd_active_passes_on_the_reference_hardened_host():
+    assert pack_statuses(make_host())["logging.auditd_active"] == "pass"
+
+
+def test_auditd_inactive_fails():
+    host = make_host(commands={"systemctl is-active auditd": ("inactive\n", "", 3)})
+    assert pack_statuses(host)["logging.auditd_active"] == "fail"
+
+
+def test_auditd_unit_not_found_fails_not_a_false_pass():
+    # Юнит auditd.service отсутствует: systemctl пишет сообщение в stderr, а не пустой вывод —
+    # пробa находит текст ошибки как значение, и "!= active" даёт честный fail, а не пустой (error) статус.
+    host = make_host(commands={"systemctl is-active auditd": ("", "Unit auditd.service could not be found.\n", 4)})
+    assert pack_statuses(host)["logging.auditd_active"] == "fail"
+
+
+def test_smb_no_guest_access_passes_when_samba_installed_without_guest_shares():
+    assert pack_statuses(make_host())["filesharing.smb_no_guest_access"] == "pass"
+
+
+@pytest.mark.parametrize("guest_line", ["   guest ok = yes", "   public = yes", "\tGUEST OK = YES"])
+def test_smb_guest_access_fails(guest_line):
+    conf = f"[global]\n   workgroup = WORKGROUP\n[public-share]\n   path = /srv/share\n{guest_line}\n"
+    host = make_host({"/etc/samba/smb.conf": conf})
+    assert pack_statuses(host)["filesharing.smb_no_guest_access"] == "fail"
+
+
+def test_smb_not_installed_is_error_not_a_false_pass():
+    # Samba не входит в базовую установку Ubuntu Server: без smb.conf проба не читается,
+    # статус — error (нет факта — не нарушение), а не молчаливый pass.
+    host = make_host(drop=["/etc/samba/smb.conf"])
+    assert pack_statuses(host)["filesharing.smb_no_guest_access"] == "error"
+
+
+def test_new_1_1_0_checks_are_disjoint_from_the_legacy_regression_suite():
+    """Страховка: новые проверки не должны случайно попасть в SHARED и исказить регрессию со старым агентом."""
+    assert NEW_IN_1_1_0.isdisjoint(SHARED)
+    assert NEW_IN_1_1_0 == {c.id for c in PACK.checks if c.id not in SHARED}
