@@ -218,11 +218,41 @@ class Host(regression.FakeHost):
         return SimpleNamespace(st_mode=0o140660, st_uid=0, st_gid=999)
 
 
+# Безопасные значения по умолчанию для полей inspect, добавленных в 1.1.0: контейнер без лишних
+# монтирований, без явного root, с лимитами CPU/памяти, не в hostNetwork/hostPID — чтобы старые
+# сценарии (заданные только флагом privileged) не превращались в fail/error по новым проверкам.
+DOCKER_SAFE_DEFAULTS = {
+    "HostConfig.Privileged": "false",
+    "HostConfig.Binds": "[]",
+    "Config.User": "",
+    "HostConfig.Memory": "104857600",
+    "HostConfig.NanoCpus": "500000000",
+    "HostConfig.NetworkMode": "bridge",
+    "HostConfig.PidMode": "",
+}
+# Статусы шести новых проверок 1.1.0 при безопасных значениях по умолчанию — используется там, где
+# тест варьирует только один параметр (privileged) и не хочет переписывать весь ожидаемый словарь.
+DOCKER_SAFE_STATUSES = {
+    "docker.no_sensitive_host_mounts": "pass",
+    "docker.no_root_user_explicit": "pass",
+    "docker.memory_limit_set": "pass",
+    "docker.cpu_limit_set": "pass",
+    "docker.no_host_network": "pass",
+    "docker.no_host_pid": "pass",
+}
+
+
 def docker_host(containers=None, ps_code=0, with_socket=True):
+    """containers: {id: "true"/"false"} — только флаг privileged (остальные поля inspect получают
+    DOCKER_SAFE_DEFAULTS), либо {id: {"HostConfig.Binds": ..., ...}} — точечная настройка любых
+    полей inspect поверх умолчаний."""
     commands = dict(regression.HARDENED_COMMANDS)
     commands["docker ps -q"] = ("".join(f"{cid}\n" for cid in (containers or {})), "permission denied" if ps_code else "", ps_code)
-    for cid, privileged in (containers or {}).items():
-        commands[f"docker inspect --format {{{{.HostConfig.Privileged}}}} {cid}"] = (f"{privileged}\n", "", 0)
+    for cid, cfg in (containers or {}).items():
+        overrides = {"HostConfig.Privileged": cfg} if isinstance(cfg, str) else cfg
+        fields = {**DOCKER_SAFE_DEFAULTS, **overrides}
+        for field, value in fields.items():
+            commands[f"docker inspect --format {{{{.{field}}}}} {cid}"] = (f"{value}\n", "", 0)
     files = dict(regression.HARDENED_FILES)
     if with_socket:
         files["/var/run/docker.sock"] = ""
@@ -240,12 +270,64 @@ def test_docker_pack_detected_only_when_socket_exists():
     ({"aaa111bbb222": "false", "ccc333ddd444": "true"}, "fail"),
 ])
 def test_docker_privileged_check(containers, expected):
-    assert statuses("docker", docker_host(containers)) == {"docker.no_privileged_containers": expected}
+    assert statuses("docker", docker_host(containers)) == {"docker.no_privileged_containers": expected, **DOCKER_SAFE_STATUSES}
 
 
 def test_docker_unavailable_is_error_not_a_pass():
     # старый агент: docker отказал -> нет факта -> error; пак сохраняет это (а не «привилегированных нет»)
-    assert statuses("docker", docker_host({"aaa111bbb222": "true"}, ps_code=1)) == {"docker.no_privileged_containers": "error"}
+    # docker ps -q отказывает одинаково для всех семи проверок пака (каждая сама вызывает list_cmd).
+    all_error = {c.id: "error" for c in PACKS["docker"].checks}
+    assert statuses("docker", docker_host({"aaa111bbb222": "true"}, ps_code=1)) == all_error
+
+
+# ---------- новые проверки 1.1.0 (методика ФСТЭК, раздел СКО) ----------
+
+@pytest.mark.parametrize("binds, expected", [
+    ("[]", "pass"),
+    ("[myvolume:/data:rw]", "pass"),  # именованный том, не путь хоста — не считается чувствительным
+    ("[/etc:/etc:ro]", "fail"),
+    ("[/var/run/docker.sock:/var/run/docker.sock]", "fail"),
+    ("[/home/user/app:/app:rw /etc:/etc/app:ro]", "fail"),  # чувствительный путь среди прочих монтирований
+])
+def test_docker_no_sensitive_host_mounts(binds, expected):
+    host = docker_host({"aaa111bbb222": {"HostConfig.Binds": binds}})
+    assert statuses("docker", host)["docker.no_sensitive_host_mounts"] == expected
+
+
+@pytest.mark.parametrize("user, expected", [
+    ("", "pass"),  # не задано явно — не нарушение (эффективный пользователь образа агенту неизвестен)
+    ("appuser", "pass"),
+    ("1000", "pass"),
+    ("root", "fail"),
+    ("0", "fail"),
+])
+def test_docker_no_root_user_explicit(user, expected):
+    host = docker_host({"aaa111bbb222": {"Config.User": user}})
+    assert statuses("docker", host)["docker.no_root_user_explicit"] == expected
+
+
+@pytest.mark.parametrize("memory, expected", [("0", "fail"), ("536870912", "pass")])
+def test_docker_memory_limit_set(memory, expected):
+    host = docker_host({"aaa111bbb222": {"HostConfig.Memory": memory}})
+    assert statuses("docker", host)["docker.memory_limit_set"] == expected
+
+
+@pytest.mark.parametrize("nanocpus, expected", [("0", "fail"), ("1000000000", "pass")])
+def test_docker_cpu_limit_set(nanocpus, expected):
+    host = docker_host({"aaa111bbb222": {"HostConfig.NanoCpus": nanocpus}})
+    assert statuses("docker", host)["docker.cpu_limit_set"] == expected
+
+
+@pytest.mark.parametrize("network_mode, expected", [("host", "fail"), ("bridge", "pass"), ("my-custom-net", "pass")])
+def test_docker_no_host_network(network_mode, expected):
+    host = docker_host({"aaa111bbb222": {"HostConfig.NetworkMode": network_mode}})
+    assert statuses("docker", host)["docker.no_host_network"] == expected
+
+
+@pytest.mark.parametrize("pid_mode, expected", [("host", "fail"), ("", "pass")])
+def test_docker_no_host_pid(pid_mode, expected):
+    host = docker_host({"aaa111bbb222": {"HostConfig.PidMode": pid_mode}})
+    assert statuses("docker", host)["docker.no_host_pid"] == expected
 
 
 def test_docker_pack_matches_legacy_rule_on_the_same_host(monkeypatch):
@@ -292,19 +374,19 @@ def test_several_packs_are_evaluated_in_one_ingest_with_one_snapshot(client, db,
 
     body = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": key}).json()
 
-    assert body["checks"] == {"total": 15, "passed": 14, "failed": 1, "errors": 0}  # 14 от ОС-пака + 1 от docker
+    assert body["checks"] == {"total": 21, "passed": 20, "failed": 1, "errors": 0}  # 14 от ОС-пака + 7 от docker (6 pass + privileged fail)
     by_pack = {p["id"]: p for p in body["packs"]}
-    assert (by_pack["docker"]["total"], by_pack["docker"]["failed"], by_pack["docker"]["maturity"]) == (1, 1, "baseline")
+    assert (by_pack["docker"]["total"], by_pack["docker"]["failed"], by_pack["docker"]["maturity"]) == (7, 1, "baseline")
     assert (by_pack["ubuntu-server"]["total"], by_pack["ubuntu-server"]["passed"]) == (14, 14)
     assert db.execute(text("SELECT COUNT(*) FROM scan_snapshots")).scalar() == 1
     rows = db.execute(text("SELECT pack_id, COUNT(*) FROM hardening_checks GROUP BY pack_id ORDER BY pack_id")).all()
-    assert [tuple(r) for r in rows] == [("docker", 1), ("ubuntu-server", 14)]
+    assert [tuple(r) for r in rows] == [("docker", 7), ("ubuntu-server", 14)]
 
 
 def test_a_later_run_without_a_pack_drops_that_packs_current_state(client, db, make_org, make_agent_key):
     key = make_agent_key(make_org("Drop Org"))
     client.post("/api/ingest", json=_run_payload(docker_host({})), headers={"X-Agent-Api-Key": key})
-    assert db.execute(text("SELECT COUNT(*) FROM hardening_checks")).scalar() == 15
+    assert db.execute(text("SELECT COUNT(*) FROM hardening_checks")).scalar() == 21  # 14 от ОС-пака + 7 от docker (0 контейнеров -> все проверки pass)
 
     client.post("/api/ingest", json=_run_payload(docker_host(with_socket=False)), headers={"X-Agent-Api-Key": key})
 
