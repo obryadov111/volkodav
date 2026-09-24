@@ -292,23 +292,23 @@ def test_several_packs_are_evaluated_in_one_ingest_with_one_snapshot(client, db,
 
     body = client.post("/api/ingest", json=payload, headers={"X-Agent-Api-Key": key}).json()
 
-    assert body["checks"] == {"total": 13, "passed": 12, "failed": 1, "errors": 0}  # 12 от ОС-пака + 1 от docker
+    assert body["checks"] == {"total": 15, "passed": 14, "failed": 1, "errors": 0}  # 14 от ОС-пака + 1 от docker
     by_pack = {p["id"]: p for p in body["packs"]}
     assert (by_pack["docker"]["total"], by_pack["docker"]["failed"], by_pack["docker"]["maturity"]) == (1, 1, "baseline")
-    assert (by_pack["ubuntu-server"]["total"], by_pack["ubuntu-server"]["passed"]) == (12, 12)
+    assert (by_pack["ubuntu-server"]["total"], by_pack["ubuntu-server"]["passed"]) == (14, 14)
     assert db.execute(text("SELECT COUNT(*) FROM scan_snapshots")).scalar() == 1
     rows = db.execute(text("SELECT pack_id, COUNT(*) FROM hardening_checks GROUP BY pack_id ORDER BY pack_id")).all()
-    assert [tuple(r) for r in rows] == [("docker", 1), ("ubuntu-server", 12)]
+    assert [tuple(r) for r in rows] == [("docker", 1), ("ubuntu-server", 14)]
 
 
 def test_a_later_run_without_a_pack_drops_that_packs_current_state(client, db, make_org, make_agent_key):
     key = make_agent_key(make_org("Drop Org"))
     client.post("/api/ingest", json=_run_payload(docker_host({})), headers={"X-Agent-Api-Key": key})
-    assert db.execute(text("SELECT COUNT(*) FROM hardening_checks")).scalar() == 13
+    assert db.execute(text("SELECT COUNT(*) FROM hardening_checks")).scalar() == 15
 
     client.post("/api/ingest", json=_run_payload(docker_host(with_socket=False)), headers={"X-Agent-Api-Key": key})
 
-    assert db.execute(text("SELECT COUNT(*) FROM hardening_checks")).scalar() == 12  # docker удалён с хоста — его проверок нет
+    assert db.execute(text("SELECT COUNT(*) FROM hardening_checks")).scalar() == 14  # docker удалён с хоста — его проверок нет
     assert db.execute(text("SELECT COUNT(*) FROM scan_snapshots")).scalar() == 2  # история сохранена
 
 
