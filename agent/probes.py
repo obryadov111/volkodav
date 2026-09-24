@@ -97,8 +97,13 @@ LOCAL_COMMAND_POLICY = {
     "aa-status": re.compile(r"^--enabled$"),
     "timedatectl": re.compile(r"^show( -p [A-Za-z]+)?( --value)?$"),
     "ss": re.compile(r"^-[tuln]+p?$"),
-    # только список запущенных контейнеров и один поле inspect по конкретному id; run/exec/rm и т.п. — отказ
-    "docker": re.compile(r"^(ps -q|inspect --format \{\{\.HostConfig\.Privileged\}\} [a-f0-9]{6,64})$"),
+    # только список запущенных контейнеров и одно поле inspect по конкретному id из закрытого списка
+    # полей (docker.yaml, проверки СКО.1.2/1.3/1.5/1.6 по методике ФСТЭК); run/exec/rm и т.п. — отказ
+    "docker": re.compile(
+        r"^(ps -q|inspect --format \{\{(\.HostConfig\.Privileged|\.HostConfig\.Binds|\.Config\.User"
+        r"|\.HostConfig\.Memory|\.HostConfig\.NanoCpus|\.HostConfig\.NetworkMode|\.HostConfig\.PidMode)"
+        r"\}\} [a-f0-9]{6,64})$"
+    ),
 }
 
 CLI_FILTERS = ("include", "exclude", "begin", "section", "count", "match", "except")

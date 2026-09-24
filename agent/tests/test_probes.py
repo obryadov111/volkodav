@@ -598,6 +598,9 @@ def test_foreach_respects_max_items():
     ["docker", "inspect", "--format", "{{.Config.Env}}", "abc123def456"],  # другое поле inspect — секреты окружения
     ["docker", "inspect", "--format", "{{.HostConfig.Privileged}}", "abc; rm -rf /"],
     ["docker", "ps", "-a"],
+    # поля 1.1.0 — тоже не любое поле inspect, а именно то, что разрешено (проверка неполного совпадения):
+    ["docker", "inspect", "--format", "{{.HostConfig.Env}}", "0123456789ab"],
+    ["docker", "inspect", "--format", "{{.Config.Cmd}}", "0123456789ab"],
 ])
 def test_docker_commands_outside_allowlist_are_refused(argv):
     with pytest.raises(ProbeError, match="вне белого списка"):
@@ -609,3 +612,9 @@ def test_allowed_docker_commands_pass_the_policy(monkeypatch):
     monkeypatch.setattr(probes.subprocess, "run", lambda argv, **kw: type("P", (), {"stdout": "", "stderr": "", "returncode": 0})())
     LocalTransport().run(["docker", "ps", "-q"])
     LocalTransport().run(["docker", "inspect", "--format", "{{.HostConfig.Privileged}}", "0123456789ab"])
+    # поля, добавленные в 1.1.0 (СКО.1.2/1.3/1.5/1.6 методики ФСТЭК) — тоже должны проходить политику
+    for field in (
+        "HostConfig.Binds", "Config.User", "HostConfig.Memory", "HostConfig.NanoCpus",
+        "HostConfig.NetworkMode", "HostConfig.PidMode",
+    ):
+        LocalTransport().run(["docker", "inspect", "--format", "{{." + field + "}}", "0123456789ab"])
