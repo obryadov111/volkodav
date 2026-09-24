@@ -341,6 +341,128 @@ def test_docker_pack_matches_legacy_rule_on_the_same_host(monkeypatch):
         assert statuses("docker", host)["docker.no_privileged_containers"] == legacy
 
 
+# ============================== PostgreSQL ==============================
+# maturity=draft: проверки написаны по документации (методика ФСТЭК, раздел СУБД) и сверены
+# регэкспами с реальным PostgreSQL (контейнер diploma_db этого хоста, только чтение), но не
+# прогонялись живым агентом на реальном Ubuntu-хосте с postgresql-16 по стандартным путям пакета.
+
+class StatHost(regression.FakeHost):
+    """Смоделированный хост с управляемыми правами файлов (для file_stat), без привязки к
+    конкретному типу файла (в отличие от docker-специфичного Host выше)."""
+
+    def __init__(self, files, commands=None, modes=None):
+        super().__init__(files, commands or {})
+        self.modes = modes or {}
+
+    def stat_file(self, path):
+        if path not in self.files and path not in self.modes:
+            raise probes.ProbeError(f"нет {path}")
+        return SimpleNamespace(st_mode=self.modes.get(path, 0o100644), st_uid=0, st_gid=0)
+
+
+PG_CONF_PATH = "/etc/postgresql/16/main/postgresql.conf"
+PG_HBA_PATH = "/etc/postgresql/16/main/pg_hba.conf"
+PG_LOG_PATH = "/var/log/postgresql/postgresql-16-main.log"
+PG_DATA_PATH = "/var/lib/postgresql/16/main"
+
+PG_HARDENED_CONF = "listen_addresses = 'localhost'\nssl = on\nssl_min_protocol_version = 'TLSv1.2'\n"
+PG_HARDENED_HBA = "local   all all                trust\nhost    all all 127.0.0.1/32 scram-sha-256\nhost    all all ::1/128     scram-sha-256\n"
+# Реальные строки, снятые с контейнера diploma_db этого хоста (2026-09-24, только чтение):
+PG_WEAK_HBA = (
+    "local   all             all                                     trust\n"
+    "host    all             all             127.0.0.1/32            trust\n"
+    "host    all             all             ::1/128                 trust\n"
+    "host all all all scram-sha-256\n"
+)
+
+
+def postgres_host(conf=PG_HARDENED_CONF, hba=PG_HARDENED_HBA, log_mode=0o100640, data_mode=0o40700, with_conf=True):
+    files = {PG_HBA_PATH: hba}
+    if with_conf:
+        files[PG_CONF_PATH] = conf
+    modes = {PG_LOG_PATH: log_mode, PG_DATA_PATH: data_mode}
+    if PG_LOG_PATH not in files:
+        files[PG_LOG_PATH] = ""  # содержимое не читается (только stat), но stat_file требует наличия пути
+    if PG_DATA_PATH not in files:
+        files[PG_DATA_PATH] = ""
+    return StatHost(files, modes=modes)
+
+
+def test_postgresql_pack_detected_only_when_conf_exists():
+    assert probes.matches_detect(postgres_host(), MANIFESTS["postgresql"]["detect"])
+    assert not probes.matches_detect(postgres_host(with_conf=False), MANIFESTS["postgresql"]["detect"])
+
+
+def test_postgresql_hardened_host_passes_everything():
+    result = statuses("postgresql", postgres_host())
+    assert len(result) == 6 and set(result.values()) == {"pass"}, {k: v for k, v in result.items() if v != "pass"}
+
+
+def test_postgresql_real_weak_config_from_this_hosts_container_fails_as_expected():
+    """Реальный pg_hba.conf/postgresql.conf контейнера diploma_db (снято 2026-09-24, только чтение) —
+    честная проверка, что паттерны пака действительно ловят то, что реально есть на этом хосте."""
+    weak_conf = "listen_addresses = '*'\n"  # ssl/ssl_min_protocol_version не заданы — реальное состояние
+    host = postgres_host(conf=weak_conf, hba=PG_WEAK_HBA, log_mode=0o100640, data_mode=0o40700)
+    result = statuses("postgresql", host)
+    assert result["postgres.pg_hba_no_unrestricted_host"] == "fail"
+    assert result["postgres.listen_addresses_not_all_interfaces"] == "fail"
+    assert result["postgres.ssl_enabled"] == "fail"  # default "off" — ssl не задан вовсе
+    assert result["postgres.ssl_min_protocol_version_modern"] == "pass"  # default TLSv1.2 — не задан, но безопасен
+    assert result["postgres.log_directory_not_world_readable"] == "pass"
+    assert result["postgres.data_directory_permissions"] == "pass"
+
+
+@pytest.mark.parametrize("hba, expected", [
+    (PG_HARDENED_HBA, "pass"),
+    ("host all all 0.0.0.0/0 scram-sha-256\n", "fail"),
+    ("host all all ::/0 scram-sha-256\n", "fail"),
+    ("host all all all scram-sha-256\n", "fail"),
+])
+def test_postgresql_pg_hba_unrestricted_host(hba, expected):
+    assert statuses("postgresql", postgres_host(hba=hba))["postgres.pg_hba_no_unrestricted_host"] == expected
+
+
+@pytest.mark.parametrize("listen, expected", [("'localhost'", "pass"), ("'*'", "fail"), ("'0.0.0.0'", "fail")])
+def test_postgresql_listen_addresses(listen, expected):
+    conf = f"listen_addresses = {listen}\nssl = on\n"
+    assert statuses("postgresql", postgres_host(conf=conf))["postgres.listen_addresses_not_all_interfaces"] == expected
+
+
+@pytest.mark.parametrize("ssl, expected", [("on", "pass"), ("off", "fail")])
+def test_postgresql_ssl_enabled(ssl, expected):
+    conf = f"listen_addresses = 'localhost'\nssl = {ssl}\n"
+    assert statuses("postgresql", postgres_host(conf=conf))["postgres.ssl_enabled"] == expected
+
+
+def test_postgresql_ssl_not_set_defaults_to_off_not_a_false_pass():
+    # Официальное умолчание PostgreSQL для ssl — off; отсутствие строки не должно выглядеть как «включено».
+    conf = "listen_addresses = 'localhost'\n"
+    assert statuses("postgresql", postgres_host(conf=conf))["postgres.ssl_enabled"] == "fail"
+
+
+@pytest.mark.parametrize("version, expected", [
+    ("'TLSv1.2'", "pass"), ("'TLSv1.3'", "pass"), ("'TLSv1'", "fail"), ("'TLSv1.1'", "fail"), ("'SSLv3'", "fail"),
+])
+def test_postgresql_ssl_min_protocol_version(version, expected):
+    conf = f"listen_addresses = 'localhost'\nssl = on\nssl_min_protocol_version = {version}\n"
+    assert statuses("postgresql", postgres_host(conf=conf))["postgres.ssl_min_protocol_version_modern"] == expected
+
+
+@pytest.mark.parametrize("mode, expected", [(0o100640, "pass"), (0o100600, "pass"), (0o100644, "fail"), (0o100664, "fail")])
+def test_postgresql_log_permissions(mode, expected):
+    assert statuses("postgresql", postgres_host(log_mode=mode))["postgres.log_directory_not_world_readable"] == expected
+
+
+@pytest.mark.parametrize("mode, expected", [(0o40700, "pass"), (0o40750, "fail"), (0o40755, "fail")])
+def test_postgresql_data_directory_permissions(mode, expected):
+    assert statuses("postgresql", postgres_host(data_mode=mode))["postgres.data_directory_permissions"] == expected
+
+
+def test_postgresql_pack_is_a_draft_and_says_so():
+    pack = PACKS["postgresql"]
+    assert pack.maturity == "draft" and pack.verified_on == [] and pack.transport == "local"
+
+
 # ============================== Несколько паков на актив ==============================
 
 def all_local_manifests():
